@@ -41,6 +41,8 @@ export default function CockpitWeek() {
   const [weekIds, setWeekIds] = useState([]);
   const [week, setWeek] = useState(null);
   const [loadingWeek, setLoadingWeek] = useState(true);
+  const [recipeTitles, setRecipeTitles] = useState({});
+
 
   // selection slot + recipe
   const [selectedSlot, setSelectedSlot] = useState(null);
@@ -141,6 +143,21 @@ export default function CockpitWeek() {
     }
   }
 
+async function ensureRecipeTitle(recipeId) {
+  if (!recipeId) return;
+  if (recipeTitles[recipeId]) return;
+
+  try {
+    const res = await fetch(`/api/recipes/${recipeId}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    setRecipeTitles((prev) => ({ ...prev, [recipeId]: data?.title || recipeId }));
+  } catch {
+    setRecipeTitles((prev) => ({ ...prev, [recipeId]: recipeId }));
+  }
+}
+
+
   // ---------- Boot ----------
   useEffect(() => {
     async function boot() {
@@ -170,6 +187,19 @@ export default function CockpitWeek() {
     setConstraints(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [week?.week_id]);
+
+  useEffect(() => {
+  if (!week?.slots) return;
+
+  const ids = Array.from(
+    new Set(Object.values(week.slots).map((x) => x?.recipe_id).filter(Boolean))
+  );
+
+  ids.forEach((rid) => void ensureRecipeTitle(rid));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [week?.week_id]);
+
+
 
   // ---------- Prepare week ----------
   async function prepareWeek() {
@@ -320,7 +350,10 @@ export default function CockpitWeek() {
                 onClick={() => onSelectSlot(slot)}
               >
                 <td style={{ padding: "6px 4px" }}>{getSlotLabel(slot)}</td>
-                <td style={{ padding: "6px 4px" }}>{s.recipe_id}</td>
+                <td style={{ padding: "6px 4px" }}>
+                {recipeTitles[s.recipe_id] || s.recipe_id}
+                </td>
+
               </tr>
             ))}
           </tbody>
