@@ -2,6 +2,29 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 
+// --- Slot labels (FR, lisibles) ---
+const SLOT_LABELS_FR = {
+  mon_lunch: "Lundi - dejeuner",
+  mon_dinner: "Lundi - diner",
+  tue_lunch: "Mardi - dejeuner",
+  tue_dinner: "Mardi - diner",
+  wed_lunch: "Mercredi - dejeuner",
+  wed_dinner: "Mercredi - diner",
+  thu_lunch: "Jeudi - dejeuner",
+  thu_dinner: "Jeudi - diner",
+  fri_lunch: "Vendredi - dejeuner",
+  fri_dinner: "Vendredi - diner",
+  sat_lunch: "Samedi - dejeuner",
+  sat_dinner: "Samedi - diner",
+  sun_lunch: "Dimanche - dejeuner",
+  sun_dinner: "Dimanche - diner"
+};
+
+function getSlotLabel(slotKey) {
+  return SLOT_LABELS_FR[slotKey] || slotKey;
+}
+
+
 const TAB = {
   RECIPE: "RECIPE",
   CHAT: "CHAT",
@@ -296,7 +319,7 @@ export default function CockpitWeek() {
                 }}
                 onClick={() => onSelectSlot(slot)}
               >
-                <td style={{ padding: "6px 4px" }}>{slot}</td>
+                <td style={{ padding: "6px 4px" }}>{getSlotLabel(slot)}</td>
                 <td style={{ padding: "6px 4px" }}>{s.recipe_id}</td>
               </tr>
             ))}
