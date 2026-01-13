@@ -40,12 +40,30 @@ function chatPath(weekId) {
   return path.join(CHAT_DIR, `${weekId}.json`);
 }
 
+function normalizeSlotKey(slot) {
+  return String(slot || "").trim();
+}
+
+function normalizeTitle(title) {
+  return String(title || "").trim();
+}
+
+function newProposalId() {
+  return `p_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
 async function ensureChatFile(weekId) {
   await ensureDir(CHAT_DIR);
 
   const p = chatPath(weekId);
   try {
     const data = await readJson(p);
+
+    // backward compatibility: ensure menu_proposals exists
+    if (!data.menu_proposals || typeof data.menu_proposals !== "object") {
+      data.menu_proposals = {};
+    }
+
     return { path: p, data };
   } catch (e) {
     if (e?.code !== "ENOENT" && e?.code !== "EMPTY_JSON") throw e;
@@ -53,6 +71,7 @@ async function ensureChatFile(weekId) {
     const fresh = {
       week_id: weekId,
       messages: [],
+      menu_proposals: {}, // Sprint 2.1
       usage_totals: {
         input_tokens: 0,
         output_tokens: 0,
@@ -71,8 +90,7 @@ function addUsage(session, model, usage) {
 
   const input = Number(usage.input_tokens || 0);
   const output = Number(usage.output_tokens || 0);
-  const total =
-    usage.total_tokens != null ? usage.total_tokens : input + output;
+  const total = usage.total_tokens != null ? usage.total_tokens : input + output;
 
   session.usage_totals.input_tokens += input;
   session.usage_totals.output_tokens += output;
@@ -182,6 +200,82 @@ router.post("/current", async (req, res) => {
     res.json({ ...data, ...(warning ? { warning } : {}) });
   } catch (e) {
     res.status(500).json({ error: "chat_write_failed", details: e.message });
+  }
+});
+
+/**
+ * GET /api/chat/proposals?week_id=2026-W04
+ */
+router.get("/proposals", async (req, res) => {
+  const weekId = String(req.query.week_id || "");
+  if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+
+  try {
+    const { data } = await ensureChatFile(weekId);
+    res.json({ week_id: weekId, menu_proposals: data.menu_proposals || {} });
+  } catch (e) {
+    res.status(500).json({ error: "proposals_read_failed", details: e.message });
+  }
+});
+
+/**
+ * POST /api/chat/proposals/import
+ * body:
+ * {
+ *   week_id: "2026-W04",
+ *   proposals: { "mon_dinner": ["Titre 1", ...], "wed_lunch": ["Titre"] }
+ * }
+ * Tolere: proposals: { slot: [ {title:"..."} ] }
+ */
+router.post("/proposals/import", async (req, res) => {
+  const weekId = String(req.body?.week_id || "");
+  const proposals = req.body?.proposals || null;
+
+  if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!proposals || typeof proposals !== "object") {
+    return res.status(400).json({ error: "missing_proposals" });
+  }
+
+  try {
+    const { path: p, data } = await ensureChatFile(weekId);
+    if (!data.menu_proposals || typeof data.menu_proposals !== "object") {
+      data.menu_proposals = {};
+    }
+
+    const createdAt = nowIso();
+
+    for (const [slotRaw, listRaw] of Object.entries(proposals)) {
+      const slot = normalizeSlotKey(slotRaw);
+      if (!slot) continue;
+
+      const list = Array.isArray(listRaw) ? listRaw : [];
+      if (!data.menu_proposals[slot]) data.menu_proposals[slot] = [];
+
+      for (const item of list) {
+        const title =
+          typeof item === "string"
+            ? normalizeTitle(item)
+            : normalizeTitle(item?.title);
+
+        if (!title) continue;
+
+        data.menu_proposals[slot].push({
+          proposal_id: newProposalId(),
+          title,
+          source: "CHAT_IMPORT",
+          status: "PROPOSED",
+          to_save: false,
+          created_at: createdAt
+        });
+      }
+    }
+
+    data.updated_at = nowIso();
+    await writeJson(p, data);
+
+    res.json({ ok: true, week_id: weekId, menu_proposals: data.menu_proposals });
+  } catch (e) {
+    res.status(500).json({ error: "proposals_import_failed", details: e.message });
   }
 });
 
