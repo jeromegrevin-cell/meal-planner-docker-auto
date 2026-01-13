@@ -1,0 +1,28 @@
+{
+  "name": "meal-planner-backend",
+  "version": "1.0.1",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "check:data": "node scripts/check-json.js",
+    "check:data:fix": "node scripts/check-json.js --fix",
+
+    "prestart": "node scripts/check-json.js",
+    "start": "node src/index.js",
+
+    "predev": "node scripts/check-json.js",
+    "dev": "nodemon --legacy-watch src/index.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "openai": "^6.16.0",
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  }
+}

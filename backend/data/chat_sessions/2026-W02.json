@@ -1,0 +1,120 @@
+{
+  "week_id": "2026-W02",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Test du message envoyé 260112 - 14:01",
+      "context": {
+        "slot": null,
+        "recipe_id": null
+      },
+      "created_at": "2026-01-12T13:01:48.668Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Mock assistant: j'ai recu ton message pour week_id=2026-W02.",
+      "context": {
+        "slot": null,
+        "recipe_id": null
+      },
+      "created_at": "2026-01-12T13:01:48.668Z"
+    },
+    {
+      "role": "user",
+      "content": "Propose une amelioration simple de cette recette.",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T13:22:54.313Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Mock assistant: j'ai recu ton message pour week_id=2026-W02, slot=fri_dinner, recipe_id=rcp_0006.",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T13:22:54.314Z"
+    },
+    {
+      "role": "user",
+      "content": "Propose une amelioration simple de cette recette.",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T13:29:34.275Z"
+    },
+    {
+      "role": "assistant",
+      "content": "OpenAI non configure (OPENAI_API_KEY manquante).",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T13:29:34.277Z"
+    },
+    {
+      "role": "user",
+      "content": "Ping",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T13:38:29.197Z"
+    },
+    {
+      "role": "assistant",
+      "content": "OpenAI quota/billing indisponible (HTTP 429). Va sur platform.openai.com -> Billing/Usage, active la facturation ou ajoute du credit, puis reessaie.",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T13:38:34.120Z"
+    },
+    {
+      "role": "user",
+      "content": "Test tokens logging",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T14:48:28.782Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Reçu. Contexte: week_id=2026-W02, slot=fri_dinner, recipe_id=rcp_0006. Je peux proposer 1 amélioration simple de la recette si tu confirmes.",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T14:48:37.575Z"
+    },
+    {
+      "role": "user",
+      "content": "Test tokens logging",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T14:50:49.803Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Do you want me to:\n- Generate a response of a specific approximate token length (e.g., 50, 200, 1000) so you can test your logging?\n- Show code to log token usage from the API (JavaScript/Python)?\n- Explain how to estimate tokens client‑side?\n\nTell me which you prefer and any target length if you want sample text.",
+      "context": {
+        "slot": "fri_dinner",
+        "recipe_id": "rcp_0006"
+      },
+      "created_at": "2026-01-12T14:51:09.877Z",
+      "usage": {
+        "input_tokens": 9,
+        "output_tokens": 1236,
+        "total_tokens": 1245
+      },
+      "model": "gpt-5"
+    }
+  ],
+  "updated_at": "2026-01-12T14:51:09.877Z"
+}

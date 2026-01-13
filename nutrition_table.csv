@@ -1,0 +1,19 @@
+food;aliases;unit;grams_per_unit;kcal_per_100g;protein_g_per_100g;fat_g_per_100g;carb_g_per_100g
+poulet;blanc de poulet|poulet;g;;165;31;3.6;0
+courge butternut;butternut|courge;g;;45;1;0.1;10
+pomme de terre;pdt|pommes de terre|patate;g;;77;2;0.1;17
+riz basmati;riz;g;;360;7;0.6;79
+pâtes;pates|spaghetti|tagliatelles;g;;350;12;1.5;73
+oignon;oignons;unit;110;40;1.1;0.1;9
+ail;gousse d’ail|gousse ail|ail;unit;5;149;6.4;0.5;33
+carotte;carottes;g;;41;0.9;0.2;10
+brocoli;brocolis;g;;34;2.8;0.4;7
+épinards;epinards;g;;23;2.9;0.4;3.6
+crème entière;creme;ml;;300;2;30;3
+yaourt nature;yaourt;g;;61;3.5;3.3;4.7
+fromage râpé;emmental|comté|gruyère|parmesan;g;;390;28;28;3.5
+huile d’olive;huile;ml;;884;0;100;0
+beurre;;g;;717;0.9;81;0.1
+sucre;sucre en poudre;g;;400;0;0;100
+tomates concassées;tomate;g;;21;1;0.2;3.5
+lait demi-écrémé;lait;ml;;46;3.4;1.6;4.8

@@ -1,0 +1,21 @@
+{
+  "recipe_id": "rcp_0002",
+  "title": "Tacos d'hiver vegetariens",
+  "source": { "type": "LOCAL", "drive_path": "" },
+  "status": "A_MODIFIER",
+  "servings": 3,
+  "season": ["hiver"],
+  "main_ingredient": "haricots_rouges",
+  "notes": "Brouillon.",
+  "content": {
+    "description_courte": "Tacos aux haricots rouges.",
+    "ingredients": [
+      { "item": "haricots rouges", "qty": "400", "unit": "g" }
+    ],
+    "preparation_steps": ["1. Cuire et assaisonner."],
+    "cuisson": "20 min",
+    "finition_service": "",
+    "conseils_variantes": ""
+  },
+  "updated_at": "2026-01-12T12:03:00+01:00"
+}

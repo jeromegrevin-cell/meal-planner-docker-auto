@@ -1,0 +1,33 @@
+{
+  "recipe_id": "rcp_0006",
+  "title": "Pates simples (placeholder)",
+  "source": {
+    "type": "LOCAL",
+    "drive_path": ""
+  },
+  "status": "VALIDEE",
+  "pdf": { "filename": "rcp_0006_test.pdf" },
+  "servings": 3,
+  "season": [
+    "hiver"
+  ],
+  "main_ingredient": "pates",
+  "notes": "UI test OK",
+  "content": {
+    "description_courte": "Recette placeholder pour tests cockpit.",
+    "ingredients": [
+      {
+        "item": "pates",
+        "qty": "300",
+        "unit": "g"
+      }
+    ],
+    "preparation_steps": [
+      "1. Cuire les pates dans l'eau bouillante salee."
+    ],
+    "cuisson": "12 min",
+    "finition_service": "Egoutter et servir.",
+    "conseils_variantes": ""
+  },
+  "updated_at": "2026-01-12T11:00:56.402Z"
+}

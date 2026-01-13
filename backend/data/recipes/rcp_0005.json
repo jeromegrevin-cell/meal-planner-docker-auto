@@ -1,0 +1,26 @@
+{
+  "recipe_id": "rcp_0005",
+  "title": "rcp_0005 (placeholder)",
+  "source": {
+    "type": "LOCAL",
+    "drive_path": ""
+  },
+  "status": "DRAFT",
+  "servings": 3,
+  "season": [
+    "hiver"
+  ],
+  "main_ingredient": "",
+  "notes": "",
+  "content": {
+    "description_courte": "Recette placeholder pour tests cockpit.",
+    "ingredients": [],
+    "preparation_steps": [
+      "1. TODO"
+    ],
+    "cuisson": "",
+    "finition_service": "",
+    "conseils_variantes": ""
+  },
+  "updated_at": "2026-01-12T16:32:10.051Z"
+}

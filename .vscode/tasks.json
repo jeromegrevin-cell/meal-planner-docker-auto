@@ -1,0 +1,69 @@
+{
+  // See https://go.microsoft.com/fwlink/?LinkId=733558
+  // for the documentation about the tasks.json format
+
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Rescan Google Drive / Recettes",
+      "type": "shell",
+      "command": "/opt/homebrew/opt/python@3.12/bin/python3.12",
+      "args": [
+        "-m",
+        "venv",
+        ".venv"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run recettes_rescan.py",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "recettes_rescan.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": "Rescan Google Drive / Recettes",
+      "problemMatcher": []
+    },
+    {
+      "label": "Ensure weekly draft template exists",
+      "type": "shell",
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "cd \"${workspaceFolder}\" && mkdir -p draft_recipes validated_recipes scripts && test -f draft_recipes/_TEMPLATE_Brouillons_menus.md && echo \"OK: template exists\" || echo \"ERROR: missing draft_recipes/_TEMPLATE_Brouillons_menus.md\""
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate weekly draft (Sun->Fri with dates)",
+      "type": "shell",
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "cd \"${workspaceFolder}\" && source .venv/bin/activate && python scripts/create_weekly_draft.py"
+      ],
+      "dependsOn": [
+        "Ensure weekly draft template exists"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
+
+{
+  "label": "Generate PDFs from validated recipes",
+  "type": "shell",
+  "command": "/bin/zsh",
+  "args": [
+    "-lc",
+    "cd \"${workspaceFolder}\" && source .venv/bin/activate && python scripts/validated_to_pdfs.py"
+  ],
+  "problemMatcher": []
+}

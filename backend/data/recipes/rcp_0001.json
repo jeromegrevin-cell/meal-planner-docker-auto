@@ -1,0 +1,28 @@
+{
+  "recipe_id": "rcp_0001",
+  "title": "Soupe poireaux pommes de terre",
+  "source": {
+    "type": "DRIVE",
+    "drive_path": "Recettes/Leek, bacon & potato soup.pdf"
+  },
+  "status": "DRAFT",
+  "servings": 3,
+  "season": ["hiver"],
+  "main_ingredient": "pommes_de_terre",
+  "notes": "",
+  "content": {
+    "description_courte": "Soupe d'hiver simple et douce.",
+    "ingredients": [
+      { "item": "poireaux", "qty": "3", "unit": "pcs" },
+      { "item": "pommes de terre", "qty": "600", "unit": "g" }
+    ],
+    "preparation_steps": [
+      "1. Eplucher et laver les legumes.",
+      "2. Cuire puis mixer."
+    ],
+    "cuisson": "25 min",
+    "finition_service": "Servir chaud.",
+    "conseils_variantes": ""
+  },
+  "updated_at": "2026-01-12T12:03:00+01:00"
+}

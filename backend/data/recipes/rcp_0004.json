@@ -1,0 +1,21 @@
+{
+  "recipe_id": "rcp_0004",
+  "title": "Risotto simple (placeholder)",
+  "source": { "type": "LOCAL", "drive_path": "" },
+  "status": "DRAFT",
+  "servings": 3,
+  "season": ["hiver"],
+  "main_ingredient": "riz",
+  "notes": "",
+  "content": {
+    "description_courte": "Placeholder.",
+    "ingredients": [
+      { "item": "riz arborio", "qty": "250", "unit": "g" }
+    ],
+    "preparation_steps": ["1. ..."],
+    "cuisson": "25 min",
+    "finition_service": "",
+    "conseils_variantes": ""
+  },
+  "updated_at": "2026-01-12T12:03:00+01:00"
+}
