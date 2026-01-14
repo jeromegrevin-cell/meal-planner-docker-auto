@@ -28,7 +28,8 @@ async function safeReadJson(filePath) {
   } catch (e) {
     const msg = String(e?.message || "");
     const isUnexpectedEnd = msg.includes("Unexpected end of JSON input");
-    const isEmptyJson = e?.code === "EMPTY_JSON" || msg.includes("Empty JSON file:");
+    const isEmptyJson =
+      e?.code === "EMPTY_JSON" || msg.includes("Empty JSON file:");
     const isSyntaxError =
       e?.name === "SyntaxError" || msg.toLowerCase().includes("syntaxerror");
 
@@ -116,6 +117,24 @@ async function ensureRecipeExists(recipeId) {
   await writeJson(p, stub);
 }
 
+// Slots autorisés (pour éviter les typos)
+const ALLOWED_SLOTS = new Set([
+  "mon_lunch",
+  "mon_dinner",
+  "tue_lunch",
+  "tue_dinner",
+  "wed_lunch",
+  "wed_dinner",
+  "thu_lunch",
+  "thu_dinner",
+  "fri_lunch",
+  "fri_dinner",
+  "sat_lunch",
+  "sat_dinner",
+  "sun_lunch",
+  "sun_dinner"
+]);
+
 /**
  * GET /api/weeks/list
  */
@@ -164,7 +183,8 @@ router.post("/prepare", async (req, res) => {
     if (!isValidWeekId(weekId)) {
       return res.status(400).json({
         error: "invalid_week_id",
-        details: "Expected format YYYY-WNN with NN between 01 and 53 (e.g., 2026-W03)"
+        details:
+          "Expected format YYYY-WNN with NN between 01 and 53 (e.g., 2026-W03)"
       });
     }
 
@@ -224,7 +244,9 @@ router.post("/prepare", async (req, res) => {
     };
 
     // creer aussi les recettes si absentes
-    const recipeIds = [...new Set(Object.values(week.slots).map((s) => s.recipe_id))];
+    const recipeIds = [
+      ...new Set(Object.values(week.slots).map((s) => s.recipe_id))
+    ];
     for (const rid of recipeIds) {
       await ensureRecipeExists(rid);
     }
@@ -233,6 +255,85 @@ router.post("/prepare", async (req, res) => {
     res.status(201).json({ created: true, week });
   } catch (e) {
     res.status(500).json({ error: "week_prepare_failed", details: e.message });
+  }
+});
+
+/**
+ * PATCH /api/weeks/:week_id/slots/:slot
+ * body: { recipe_id?: string|null, free_text?: string|null }
+ * - Permet "Valider" une proposition (recipe_id et/ou free_text)
+ * - Stocke free_text dans week.slots[slot].free_text
+ */
+router.patch("/:week_id/slots/:slot", async (req, res) => {
+  try {
+    const weekId = String(req.params.week_id || "").trim();
+    const slot = String(req.params.slot || "").trim();
+
+    if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+    if (!isValidWeekId(weekId)) {
+      return res.status(400).json({ error: "invalid_week_id" });
+    }
+
+    if (!slot) return res.status(400).json({ error: "missing_slot" });
+    if (!ALLOWED_SLOTS.has(slot)) {
+      return res.status(400).json({
+        error: "invalid_slot",
+        allowed: Array.from(ALLOWED_SLOTS)
+      });
+    }
+
+    const recipeIdRaw = req.body?.recipe_id;
+    const freeTextRaw = req.body?.free_text;
+
+    // recipe_id: string | null | undefined
+    let recipe_id = undefined;
+    if (recipeIdRaw === null) recipe_id = null;
+    else if (recipeIdRaw !== undefined) {
+      const s = String(recipeIdRaw).trim();
+      if (!s) recipe_id = null;
+      else recipe_id = s;
+    }
+
+    // free_text: string | null | undefined
+    let free_text = undefined;
+    if (freeTextRaw === null) free_text = null;
+    else if (freeTextRaw !== undefined) {
+      const s = String(freeTextRaw);
+      free_text = s; // peut être "" si tu veux explicitement vider
+    }
+
+    // Charger semaine
+    const p = path.join(WEEKS_DIR, `${weekId}.json`);
+    const week = await safeReadJson(p);
+    if (!week) return res.status(404).json({ error: "week_not_found" });
+
+    week.slots = week.slots || {};
+    week.slots[slot] = week.slots[slot] || {};
+
+    if (recipe_id !== undefined) {
+      if (recipe_id) {
+        await ensureRecipeExists(recipe_id);
+        week.slots[slot].recipe_id = recipe_id;
+      } else {
+        // null/empty => on retire recipe_id
+        delete week.slots[slot].recipe_id;
+      }
+    }
+
+    if (free_text !== undefined) {
+      if (free_text === null) {
+        delete week.slots[slot].free_text;
+      } else {
+        week.slots[slot].free_text = free_text;
+      }
+    }
+
+    week.updated_at = nowIso();
+    await writeJson(p, week);
+
+    res.json({ ok: true, week });
+  } catch (e) {
+    res.status(500).json({ error: "week_slot_patch_failed", details: e.message });
   }
 });
 
@@ -260,7 +361,7 @@ router.get("/:week_id/constraints", async (req, res) => {
 
 /**
  * GET /api/weeks/:week_id
- * IMPORTANT: doit etre APRES /current, /list, /prepare, /:week_id/constraints
+ * IMPORTANT: doit etre APRES /current, /list, /prepare, /:week_id/constraints, /:week_id/slots/:slot
  */
 router.get("/:week_id", async (req, res) => {
   try {

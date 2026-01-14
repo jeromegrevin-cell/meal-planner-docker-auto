@@ -8,7 +8,7 @@ import weeksRoutes from "./routes/weeks.js";
 import healthRoutes from "./routes/health.js";
 import chatRoutes from "./routes/chat.js";
 import recipeFilesRoutes from "./routes/recipeFiles.js";
-
+import driveRoutes from "./routes/drive.js";
 
 dotenv.config();
 
@@ -47,7 +47,7 @@ app.use("/api/health", healthRoutes);
 app.use("/api/weeks", weeksRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/recipes", recipeFilesRoutes);
-
+app.use("/api/drive", driveRoutes);
 
 // --------------------
 // Server start
