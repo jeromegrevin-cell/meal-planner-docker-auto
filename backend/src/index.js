@@ -52,8 +52,9 @@ app.use("/api/drive", driveRoutes);
 // --------------------
 // Server start
 // --------------------
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
+const HOST = process.env.HOST || "127.0.0.1";
 
-app.listen(PORT, () => {
-  console.log(`[backend] listening on port ${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`[backend] listening on http://${HOST}:${PORT}`);
 });
