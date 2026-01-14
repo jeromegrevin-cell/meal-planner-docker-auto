@@ -135,6 +135,12 @@ const ALLOWED_SLOTS = new Set([
   "sun_dinner"
 ]);
 
+function computeValidated(slotObj) {
+  const rid = typeof slotObj?.recipe_id === "string" ? slotObj.recipe_id.trim() : "";
+  const ft = typeof slotObj?.free_text === "string" ? slotObj.free_text.trim() : "";
+  return Boolean(rid) || Boolean(ft);
+}
+
 /**
  * GET /api/weeks/list
  */
@@ -217,6 +223,8 @@ router.post("/prepare", async (req, res) => {
       return res.status(200).json({ created: false, week: existing });
     }
 
+    // IMPORTANT: recipe_id present != "validé menu"
+    // On initialise validated=false partout.
     const week = {
       week_id: weekId,
       date_start: dateStart,
@@ -229,16 +237,16 @@ router.post("/prepare", async (req, res) => {
         seasonality_required: true
       },
       slots: {
-        mon_dinner: { recipe_id: "rcp_0001" },
-        tue_dinner: { recipe_id: "rcp_0002" },
-        wed_lunch: { recipe_id: "rcp_0003" },
-        wed_dinner: { recipe_id: "rcp_0004" },
-        thu_dinner: { recipe_id: "rcp_0005" },
-        fri_dinner: { recipe_id: "rcp_0006" },
-        sat_lunch: { recipe_id: "rcp_0003" },
-        sat_dinner: { recipe_id: "rcp_0002" },
-        sun_lunch: { recipe_id: "rcp_0004" },
-        sun_dinner: { recipe_id: "rcp_0001" }
+        mon_dinner: { recipe_id: "rcp_0001", validated: false },
+        tue_dinner: { recipe_id: "rcp_0002", validated: false },
+        wed_lunch: { recipe_id: "rcp_0003", validated: false },
+        wed_dinner: { recipe_id: "rcp_0004", validated: false },
+        thu_dinner: { recipe_id: "rcp_0005", validated: false },
+        fri_dinner: { recipe_id: "rcp_0006", validated: false },
+        sat_lunch: { recipe_id: "rcp_0003", validated: false },
+        sat_dinner: { recipe_id: "rcp_0002", validated: false },
+        sun_lunch: { recipe_id: "rcp_0004", validated: false },
+        sun_dinner: { recipe_id: "rcp_0001", validated: false }
       },
       updated_at: nowIso()
     };
@@ -263,6 +271,7 @@ router.post("/prepare", async (req, res) => {
  * body: { recipe_id?: string|null, free_text?: string|null }
  * - Permet "Valider" une proposition (recipe_id et/ou free_text)
  * - Stocke free_text dans week.slots[slot].free_text
+ * - Met week.slots[slot].validated = true si (recipe_id ou free_text non vide), sinon false
  */
 router.patch("/:week_id/slots/:slot", async (req, res) => {
   try {
@@ -328,12 +337,17 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
       }
     }
 
+    // Recalcul validated (important: recipe_id placeholder != validated par défaut)
+    week.slots[slot].validated = computeValidated(week.slots[slot]);
+
     week.updated_at = nowIso();
     await writeJson(p, week);
 
     res.json({ ok: true, week });
   } catch (e) {
-    res.status(500).json({ error: "week_slot_patch_failed", details: e.message });
+    res
+      .status(500)
+      .json({ error: "week_slot_patch_failed", details: e.message });
   }
 });
 
