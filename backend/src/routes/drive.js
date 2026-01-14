@@ -74,16 +74,22 @@ async function fileExists(p) {
 }
 
 async function resolveRescanScriptPath() {
-  // Contexte normal: backend lance depuis backend/ => ../scripts/recettes_rescan.py
-  const p1 = path.join(process.cwd(), "..", "scripts", "recettes_rescan.py");
-  if (await fileExists(p1)) return p1;
+  const candidates = [
+    // Contexte normal: backend/ -> script a la racine
+    path.join(process.cwd(), "..", "recettes_rescan.py"),
+    // Si lance depuis la racine
+    path.join(process.cwd(), "recettes_rescan.py"),
+    // Legacy path si jamais le script est sous scripts/
+    path.join(process.cwd(), "..", "scripts", "recettes_rescan.py"),
+    path.join(process.cwd(), "scripts", "recettes_rescan.py")
+  ];
 
-  // Fallback si jamais lance depuis la racine
-  const p2 = path.join(process.cwd(), "scripts", "recettes_rescan.py");
-  if (await fileExists(p2)) return p2;
+  for (const p of candidates) {
+    if (await fileExists(p)) return p;
+  }
 
-  // Dernier recours: retourne p1 (message d'erreur plus clair au runtime)
-  return p1;
+  // Dernier recours: on renvoie le chemin attendu (message d'erreur clair au runtime)
+  return candidates[0];
 }
 
 /**
