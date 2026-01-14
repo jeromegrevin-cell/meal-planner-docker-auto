@@ -21,13 +21,20 @@ const SLOT_LABELS_FR = {
 };
 
 const ALL_SLOTS = [
-  "mon_lunch", "mon_dinner",
-  "tue_lunch", "tue_dinner",
-  "wed_lunch", "wed_dinner",
-  "thu_lunch", "thu_dinner",
-  "fri_lunch", "fri_dinner",
-  "sat_lunch", "sat_dinner",
-  "sun_lunch", "sun_dinner"
+  "mon_lunch",
+  "mon_dinner",
+  "tue_lunch",
+  "tue_dinner",
+  "wed_lunch",
+  "wed_dinner",
+  "thu_lunch",
+  "thu_dinner",
+  "fri_lunch",
+  "fri_dinner",
+  "sat_lunch",
+  "sat_dinner",
+  "sun_lunch",
+  "sun_dinner"
 ];
 
 // Seuls ces slots ont un champ libre possible
@@ -79,6 +86,10 @@ export default function CockpitWeek() {
 
   const [constraintsOpen, setConstraintsOpen] = useState(false);
   const [constraints, setConstraints] = useState(null);
+
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatWarning, setChatWarning] = useState(null);
 
   const [menuProposals, setMenuProposals] = useState({});
   const [savedProposalIds, setSavedProposalIds] = useState({});
@@ -138,6 +149,24 @@ export default function CockpitWeek() {
     setRecipeTitles((p) => ({ ...p, [recipeId]: r.title || recipeId }));
   }
 
+  async function loadChat(weekId) {
+    const j = await fetchJson(
+      `/api/chat/current?week_id=${encodeURIComponent(weekId)}`
+    );
+    setChatMessages(j.messages || []);
+    setChatWarning(j.warning || null);
+  }
+
+  async function sendChat(weekId, message, context) {
+    const j = await fetchJson("/api/chat/current", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week_id: weekId, message, context })
+    });
+    setChatMessages(j.messages || []);
+    setChatWarning(j.warning || null);
+  }
+
   async function loadMenuProposals(weekId) {
     try {
       const j = await fetchJson(
@@ -164,23 +193,21 @@ export default function CockpitWeek() {
 
       setSelectedSlot(first);
 
-      // Panneau recette: on affiche seulement si le slot est validé
       if (w?.slots?.[first]?.validated === true) {
         await loadRecipe(w?.slots?.[first]?.recipe_id || null);
       } else {
         setRecipe(null);
       }
 
+      await loadChat(w.week_id);
       await loadMenuProposals(w.week_id);
     })();
   }, []);
 
   useEffect(() => {
     if (!selectedSlot || !week?.slots) return;
-
     const s = week.slots[selectedSlot] || null;
     const isValidated = s?.validated === true;
-
     if (isValidated) loadRecipe(s?.recipe_id || null);
     else setRecipe(null);
   }, [selectedSlot, week]);
@@ -197,6 +224,7 @@ export default function CockpitWeek() {
       "mon_dinner";
 
     setSelectedSlot(first);
+    await loadChat(w.week_id);
     await loadMenuProposals(w.week_id);
   }
 
@@ -217,6 +245,15 @@ export default function CockpitWeek() {
     setPrepWeekId("");
     setPrepStart("");
     setPrepEnd("");
+  }
+
+  async function onSendChat() {
+    const msg = String(chatInput || "").trim();
+    if (!msg || !week?.week_id) return;
+
+    await sendChat(week.week_id, msg, { slot: selectedSlot });
+    setChatInput("");
+    await loadMenuProposals(week.week_id);
   }
 
   async function onValidateProposal(slot, proposal) {
@@ -263,8 +300,7 @@ export default function CockpitWeek() {
   }
 
   function validatedLabel(s) {
-    if (!s) return "";
-    if (s.validated !== true) return "";
+    if (!s || s.validated !== true) return "";
     if (s.recipe_id) return recipeTitles[s.recipe_id] || s.recipe_id;
     if (s.free_text) return s.free_text;
     return "";
@@ -318,13 +354,9 @@ export default function CockpitWeek() {
         <tbody>
           {tableRows.map(([slot, s]) => {
             const isSelected = selectedSlot === slot;
-
             const isValidated = s?.validated === true;
 
-            // Champ libre UNIQUEMENT sur slots autorises ET si pas valide
             const canFreeText = FREE_TEXT_ALLOWED_SLOTS.has(slot) && !isValidated;
-
-            // Propositions UNIQUEMENT si pas valide
             const showProposals = !isValidated;
 
             const proposals = menuProposals?.[slot] || [];
@@ -340,15 +372,13 @@ export default function CockpitWeek() {
                 </td>
 
                 <td style={{ verticalAlign: "top", padding: "8px 6px" }}>
-                  {/* Si validé => afficher uniquement le titre validé */}
                   {isValidated ? (
                     <strong>{validatedLabel(s)}</strong>
                   ) : (
                     <>
-                      {/* Non validé: textarea possible sur certains slots */}
                       {canFreeText && (
                         <textarea
-                          style={{ display: "block", width: "100%", marginTop: 2 }}
+                          style={{ display: "block", width: "100%", marginTop: 6 }}
                           rows={2}
                           value={freeTextBySlot[slot] || ""}
                           onClick={(e) => e.stopPropagation()}
@@ -361,7 +391,6 @@ export default function CockpitWeek() {
                         />
                       )}
 
-                      {/* Non validé: propositions + boutons */}
                       {showProposals &&
                         proposals.map((p) => {
                           const saved = !!savedProposalIds[p.proposal_id];
@@ -403,6 +432,18 @@ export default function CockpitWeek() {
           })}
         </tbody>
       </table>
+
+      <div style={{ marginTop: 16 }}>
+        <h3>{selectedSlot ? getSlotLabel(selectedSlot) : ""}</h3>
+        {recipe ? (
+          <>
+            <strong>{recipe.title}</strong>
+            <p>{recipe?.content?.description_courte}</p>
+          </>
+        ) : (
+          <em>Aucune recette</em>
+        )}
+      </div>
 
       {constraintsOpen && (
         <pre onClick={() => setConstraintsOpen(false)}>
