@@ -38,7 +38,12 @@ logs/
 credentials/
 
 # --------------------
+# Runtime data (dev)
+# --------------------
+backend/data/
+frontend/.vite/
+
+# --------------------
 # Temporary / backup
 # --------------------
 *.save
-
