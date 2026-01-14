@@ -267,6 +267,51 @@ router.post("/prepare", async (req, res) => {
 });
 
 /**
+ * PATCH /api/weeks/:week_id/slots/init-validation
+ * Initialise week.slots[slot].validated:
+ * - true si recipe_id existe
+ * - false sinon
+ * Ne touche pas recipe_id / free_text.
+ */
+router.patch("/:week_id/slots/init-validation", async (req, res) => {
+  try {
+    const weekId = String(req.params.week_id || "").trim();
+
+    if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+    if (!isValidWeekId(weekId)) {
+      return res.status(400).json({ error: "invalid_week_id" });
+    }
+
+    const p = path.join(WEEKS_DIR, `${weekId}.json`);
+    const week = await safeReadJson(p);
+    if (!week) return res.status(404).json({ error: "week_not_found" });
+
+    week.slots = week.slots || {};
+
+    for (const slot of ALLOWED_SLOTS) {
+      const cur = week.slots[slot] || {};
+      const hasRecipe = !!cur.recipe_id;
+
+      // On garde les autres champs, on impose validated selon presence recipe_id
+      week.slots[slot] = {
+        ...cur,
+        validated: hasRecipe
+      };
+    }
+
+    week.updated_at = nowIso();
+    await writeJson(p, week);
+
+    return res.json({ ok: true, week });
+  } catch (e) {
+    return res
+      .status(500)
+      .json({ error: "week_init_validation_failed", details: e.message });
+  }
+});
+
+
+/**
  * PATCH /api/weeks/:week_id/slots/:slot
  * body: { recipe_id?: string|null, free_text?: string|null }
  * - Permet "Valider" une proposition (recipe_id et/ou free_text)
