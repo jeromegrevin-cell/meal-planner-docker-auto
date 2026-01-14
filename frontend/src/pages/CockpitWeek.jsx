@@ -21,20 +21,13 @@ const SLOT_LABELS_FR = {
 };
 
 const ALL_SLOTS = [
-  "mon_lunch",
-  "mon_dinner",
-  "tue_lunch",
-  "tue_dinner",
-  "wed_lunch",
-  "wed_dinner",
-  "thu_lunch",
-  "thu_dinner",
-  "fri_lunch",
-  "fri_dinner",
-  "sat_lunch",
-  "sat_dinner",
-  "sun_lunch",
-  "sun_dinner"
+  "mon_lunch","mon_dinner",
+  "tue_lunch","tue_dinner",
+  "wed_lunch","wed_dinner",
+  "thu_lunch","thu_dinner",
+  "fri_lunch","fri_dinner",
+  "sat_lunch","sat_dinner",
+  "sun_lunch","sun_dinner"
 ];
 
 // Seuls ces slots ont un champ libre possible
@@ -71,6 +64,39 @@ function buildOtherProposalPrompt(slot) {
   );
 }
 
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateFr(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  const s = new Intl.DateTimeFormat("fr-FR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric"
+  }).format(d);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function getWeekId(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const target = new Date(d.valueOf());
+  const dayNr = (d.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = target.valueOf();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+  }
+  const week = 1 + Math.ceil((firstThursday - target) / 604800000);
+  const year = d.getFullYear();
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+
 export default function CockpitWeek() {
   // --------------------
   // State
@@ -86,10 +112,6 @@ export default function CockpitWeek() {
 
   const [constraintsOpen, setConstraintsOpen] = useState(false);
   const [constraints, setConstraints] = useState(null);
-
-  const [chatMessages, setChatMessages] = useState([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatWarning, setChatWarning] = useState(null);
 
   const [menuProposals, setMenuProposals] = useState({});
   const [savedProposalIds, setSavedProposalIds] = useState({});
@@ -149,24 +171,6 @@ export default function CockpitWeek() {
     setRecipeTitles((p) => ({ ...p, [recipeId]: r.title || recipeId }));
   }
 
-  async function loadChat(weekId) {
-    const j = await fetchJson(
-      `/api/chat/current?week_id=${encodeURIComponent(weekId)}`
-    );
-    setChatMessages(j.messages || []);
-    setChatWarning(j.warning || null);
-  }
-
-  async function sendChat(weekId, message, context) {
-    const j = await fetchJson("/api/chat/current", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ week_id: weekId, message, context })
-    });
-    setChatMessages(j.messages || []);
-    setChatWarning(j.warning || null);
-  }
-
   async function loadMenuProposals(weekId) {
     try {
       const j = await fetchJson(
@@ -199,7 +203,6 @@ export default function CockpitWeek() {
         setRecipe(null);
       }
 
-      await loadChat(w.week_id);
       await loadMenuProposals(w.week_id);
     })();
   }, []);
@@ -207,8 +210,7 @@ export default function CockpitWeek() {
   useEffect(() => {
     if (!selectedSlot || !week?.slots) return;
     const s = week.slots[selectedSlot] || null;
-    const isValidated = s?.validated === true;
-    if (isValidated) loadRecipe(s?.recipe_id || null);
+    if (s?.validated === true) loadRecipe(s?.recipe_id || null);
     else setRecipe(null);
   }, [selectedSlot, week]);
 
@@ -224,7 +226,6 @@ export default function CockpitWeek() {
       "mon_dinner";
 
     setSelectedSlot(first);
-    await loadChat(w.week_id);
     await loadMenuProposals(w.week_id);
   }
 
@@ -245,15 +246,6 @@ export default function CockpitWeek() {
     setPrepWeekId("");
     setPrepStart("");
     setPrepEnd("");
-  }
-
-  async function onSendChat() {
-    const msg = String(chatInput || "").trim();
-    if (!msg || !week?.week_id) return;
-
-    await sendChat(week.week_id, msg, { slot: selectedSlot });
-    setChatInput("");
-    await loadMenuProposals(week.week_id);
   }
 
   async function onValidateProposal(slot, proposal) {
@@ -323,23 +315,25 @@ export default function CockpitWeek() {
           ))}
         </select>
 
+        <input type="text" placeholder="Week ID" value={prepWeekId} readOnly />
         <input
-          placeholder="2026-W04"
-          value={prepWeekId}
-          onChange={(e) => setPrepWeekId(e.target.value)}
-        />
-        <input
-          placeholder="YYYY-MM-DD"
+          type="date"
           value={prepStart}
-          onChange={(e) => setPrepStart(e.target.value)}
+          onChange={(e) => {
+            const start = e.target.value;
+            if (!start) return;
+            setPrepStart(start);
+            setPrepEnd(addDays(start, 6));
+            setPrepWeekId(getWeekId(start));
+          }}
         />
         <input
-          placeholder="YYYY-MM-DD"
+          type="date"
           value={prepEnd}
           onChange={(e) => setPrepEnd(e.target.value)}
         />
-        <button onClick={onPrepareWeek}>Préparer</button>
 
+        <button onClick={onPrepareWeek}>Préparer</button>
         <button
           onClick={() =>
             loadConstraints(week.week_id).then(() => setConstraintsOpen(true))
@@ -349,6 +343,12 @@ export default function CockpitWeek() {
           Contraintes
         </button>
       </div>
+
+      {week?.date_start && week?.date_end && (
+        <div style={{ marginTop: 8, opacity: 0.8 }}>
+          Semaine du {formatDateFr(week.date_start)} au {formatDateFr(week.date_end)}
+        </div>
+      )}
 
       <table style={{ width: "100%", marginTop: 16 }}>
         <tbody>
@@ -432,18 +432,6 @@ export default function CockpitWeek() {
           })}
         </tbody>
       </table>
-
-      <div style={{ marginTop: 16 }}>
-        <h3>{selectedSlot ? getSlotLabel(selectedSlot) : ""}</h3>
-        {recipe ? (
-          <>
-            <strong>{recipe.title}</strong>
-            <p>{recipe?.content?.description_courte}</p>
-          </>
-        ) : (
-          <em>Aucune recette</em>
-        )}
-      </div>
 
       {constraintsOpen && (
         <pre onClick={() => setConstraintsOpen(false)}>
