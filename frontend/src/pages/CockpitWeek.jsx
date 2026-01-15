@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import IconButton from "../components/IconButton.jsx";
 
 // --------------------
@@ -205,6 +205,18 @@ function buildPeopleSignature(people) {
   return `${adults}|${children}|${months.join(",")}`;
 }
 
+function buildProposalPreviewKey(proposalId, signature) {
+  return `proposal:${proposalId}__${signature}`;
+}
+
+function buildRecipePrefetchKey(recipeId) {
+  return `recipe:${recipeId}`;
+}
+
+function buildFreeTextPrefetchKey(freeText, signature) {
+  return `free:${freeText}__${signature}`;
+}
+
 function getWeekId(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   const target = new Date(d.valueOf());
@@ -242,6 +254,10 @@ export default function CockpitWeek() {
   const [uploadedRecipeIdsBySlot, setUploadedRecipeIdsBySlot] = useState({});
 
   const [previewCache, setPreviewCache] = useState({});
+  const [prefetchStatus, setPrefetchStatus] = useState({});
+  const recipePrefetchInFlight = useRef(new Set());
+  const previewPrefetchInFlight = useRef(new Set());
+  const prefetchTimers = useRef({});
 
   // Champ libre local (UI only pour l’instant)
   const [freeTextBySlot, setFreeTextBySlot] = useState({});
@@ -309,6 +325,44 @@ export default function CockpitWeek() {
     setRecipe(r);
     setRecipeTitles((p) => ({ ...p, [recipeId]: r.title || recipeId }));
     setRecipeCache((p) => ({ ...p, [recipeId]: r }));
+  }
+
+  async function prefetchRecipe(recipeId) {
+    if (!recipeId) return;
+    const key = buildRecipePrefetchKey(recipeId);
+    if (recipeCache?.[recipeId]) {
+      setPrefetchStatus((prev) => ({ ...prev, [key]: "ready" }));
+      clearTimeout(prefetchTimers.current[key]);
+      prefetchTimers.current[key] = setTimeout(() => {
+        setPrefetchStatus((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }, 1500);
+      return;
+    }
+    setPrefetchStatus((prev) => ({ ...prev, [key]: "loading" }));
+    if (recipePrefetchInFlight.current.has(recipeId)) return;
+    recipePrefetchInFlight.current.add(recipeId);
+    try {
+      const r = await fetchJson(`/api/recipes/${encodeURIComponent(recipeId)}`);
+      setRecipeTitles((p) => ({ ...p, [recipeId]: r.title || recipeId }));
+      setRecipeCache((p) => ({ ...p, [recipeId]: r }));
+      setPrefetchStatus((prev) => ({ ...prev, [key]: "ready" }));
+    } catch {
+      // ignore prefetch errors
+    } finally {
+      recipePrefetchInFlight.current.delete(recipeId);
+      clearTimeout(prefetchTimers.current[key]);
+      prefetchTimers.current[key] = setTimeout(() => {
+        setPrefetchStatus((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }, 1500);
+    }
   }
 
   async function loadMenuProposals(weekId) {
@@ -629,7 +683,15 @@ export default function CockpitWeek() {
 
     const rid = proposal?.recipe_id || null;
     if (!rid) {
-      await loadProposalPreview(slot, proposal);
+      const slotPeople = normalizePeopleFromSlot(week?.slots?.[slot]?.people);
+      const signature = buildPeopleSignature(slotPeople);
+      const key = buildProposalPreviewKey(proposal?.proposal_id, signature);
+      const cachedPreview = previewCache?.[key];
+      if (cachedPreview?.content) {
+        setProposalRecipe({ content: cachedPreview.content });
+        return;
+      }
+      await loadProposalPreview(slot, proposal, slotPeople);
       return;
     }
 
@@ -646,10 +708,19 @@ export default function CockpitWeek() {
 
   async function loadProposalPreview(slot, proposal, peopleOverride = null) {
     if (!week?.week_id || !proposal?.proposal_id || !proposal?.title) return;
+    const slotPeople =
+      peopleOverride || normalizePeopleFromSlot(week?.slots?.[slot]?.people);
+    const signature = buildPeopleSignature(slotPeople);
+    const cacheKey = buildProposalPreviewKey(proposal.proposal_id, signature);
+    const cachedPreview = previewCache?.[cacheKey];
+    if (cachedPreview?.content) {
+      setProposalRecipe({ content: cachedPreview.content });
+      return;
+    }
+
     setProposalLoading(true);
     setProposalError(null);
     try {
-      const slotPeople = peopleOverride || normalizePeopleFromSlot(week?.slots?.[slot]?.people);
       const j = await fetchJson("/api/chat/proposals/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -662,10 +733,110 @@ export default function CockpitWeek() {
         })
       });
       setProposalRecipe({ content: j.preview });
+      setPreviewCache((prev) => ({ ...prev, [cacheKey]: { content: j.preview } }));
     } catch (e) {
       setProposalError(e.message || String(e));
     } finally {
       setProposalLoading(false);
+    }
+  }
+
+  async function prefetchProposalPreview(slot, proposal) {
+    if (!proposal?.proposal_id || !proposal?.title) return;
+    if (proposal.recipe_id) {
+      await prefetchRecipe(proposal.recipe_id);
+      return;
+    }
+    if (!week?.slots?.[slot]) return;
+    const slotPeople = normalizePeopleFromSlot(week?.slots?.[slot]?.people);
+    const signature = buildPeopleSignature(slotPeople);
+    const cacheKey = buildProposalPreviewKey(proposal.proposal_id, signature);
+    if (previewCache?.[cacheKey]?.content) {
+      setPrefetchStatus((prev) => ({ ...prev, [cacheKey]: "ready" }));
+      clearTimeout(prefetchTimers.current[cacheKey]);
+      prefetchTimers.current[cacheKey] = setTimeout(() => {
+        setPrefetchStatus((prev) => {
+          const next = { ...prev };
+          delete next[cacheKey];
+          return next;
+        });
+      }, 1500);
+      return;
+    }
+    setPrefetchStatus((prev) => ({ ...prev, [cacheKey]: "loading" }));
+    if (previewPrefetchInFlight.current.has(cacheKey)) return;
+    previewPrefetchInFlight.current.add(cacheKey);
+    try {
+      const j = await fetchJson("/api/chat/proposals/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          week_id: week.week_id,
+          slot,
+          proposal_id: proposal.proposal_id,
+          title: proposal.title,
+          people: slotPeople
+        })
+      });
+      setPreviewCache((prev) => ({ ...prev, [cacheKey]: { content: j.preview } }));
+      setPrefetchStatus((prev) => ({ ...prev, [cacheKey]: "ready" }));
+    } catch {
+      // ignore prefetch errors
+    } finally {
+      previewPrefetchInFlight.current.delete(cacheKey);
+      clearTimeout(prefetchTimers.current[cacheKey]);
+      prefetchTimers.current[cacheKey] = setTimeout(() => {
+        setPrefetchStatus((prev) => {
+          const next = { ...prev };
+          delete next[cacheKey];
+          return next;
+        });
+      }, 1500);
+    }
+  }
+
+  async function prefetchFreeTextPreview(freeText, slotPeople) {
+    if (!freeText) return;
+    const signature = buildPeopleSignature(slotPeople);
+    const cacheKey = buildFreeTextPrefetchKey(freeText, signature);
+    if (previewCache?.[cacheKey]?.content) {
+      setPrefetchStatus((prev) => ({ ...prev, [cacheKey]: "ready" }));
+      clearTimeout(prefetchTimers.current[cacheKey]);
+      prefetchTimers.current[cacheKey] = setTimeout(() => {
+        setPrefetchStatus((prev) => {
+          const next = { ...prev };
+          delete next[cacheKey];
+          return next;
+        });
+      }, 1500);
+      return;
+    }
+    setPrefetchStatus((prev) => ({ ...prev, [cacheKey]: "loading" }));
+    if (previewPrefetchInFlight.current.has(cacheKey)) return;
+    previewPrefetchInFlight.current.add(cacheKey);
+    try {
+      const j = await fetchJson("/api/chat/preview-title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: freeText,
+          people: slotPeople
+        })
+      });
+      setPreviewCache((prev) => ({ ...prev, [cacheKey]: { content: j.preview } }));
+      setPrefetchStatus((prev) => ({ ...prev, [cacheKey]: "ready" }));
+    } catch {
+      // ignore prefetch errors
+    } finally {
+      previewPrefetchInFlight.current.delete(cacheKey);
+      clearTimeout(prefetchTimers.current[cacheKey]);
+      prefetchTimers.current[cacheKey] = setTimeout(() => {
+        setPrefetchStatus((prev) => {
+          const next = { ...prev };
+          delete next[cacheKey];
+          return next;
+        });
+      }, 1500);
     }
   }
 
@@ -889,8 +1060,34 @@ export default function CockpitWeek() {
                           e.stopPropagation();
                           openRecipeModal(slot);
                         }}
+                        onMouseEnter={() => {
+                          const rid = s?.recipe_id || null;
+                          const freeText = s?.free_text || null;
+                          const slotPeople = normalizePeopleFromSlot(s?.people);
+                          if (rid) {
+                            prefetchRecipe(rid);
+                          } else if (freeText) {
+                            prefetchFreeTextPreview(freeText, slotPeople);
+                          }
+                        }}
                         style={{ padding: "4px 6px" }}
                       />
+                      {(() => {
+                        const rid = s?.recipe_id || null;
+                        const freeText = s?.free_text || null;
+                        const signature = buildPeopleSignature(normalizePeopleFromSlot(s?.people));
+                        const key = rid
+                          ? buildRecipePrefetchKey(rid)
+                          : freeText
+                            ? buildFreeTextPrefetchKey(freeText, signature)
+                            : null;
+                        const status = key ? prefetchStatus?.[key] : null;
+                        return status ? (
+                          <span style={{ fontSize: 11, opacity: 0.75 }}>
+                            {status === "loading" ? "Préchargement…" : "Préchargé"}
+                          </span>
+                        ) : null;
+                      })()}
                       {(() => {
                         const rid = s?.recipe_id || null;
                         const meta = rid ? recipeCache?.[rid] : null;
@@ -986,8 +1183,19 @@ export default function CockpitWeek() {
                                 icon="👁️"
                                 label="Voir"
                                 onClick={() => openProposalModal(slot, p)}
+                                onMouseEnter={() => prefetchProposalPreview(slot, p)}
                                 style={{ padding: "4px 6px" }}
                               />
+                              {(() => {
+                                const signature = buildPeopleSignature(people);
+                                const key = buildProposalPreviewKey(p.proposal_id, signature);
+                                const status = prefetchStatus?.[key];
+                                return status ? (
+                                  <span style={{ fontSize: 11, opacity: 0.75 }}>
+                                    {status === "loading" ? "Préchargement…" : "Préchargé"}
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
                           );
                         })}
