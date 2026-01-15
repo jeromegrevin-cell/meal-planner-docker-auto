@@ -117,6 +117,56 @@ async function ensureRecipeExists(recipeId) {
   await writeJson(p, stub);
 }
 
+const DEFAULT_CHILD_BIRTH_MONTHS = ["2016-08"];
+
+function defaultPeople() {
+  return {
+    adults: 2,
+    children: 1,
+    child_birth_months: [...DEFAULT_CHILD_BIRTH_MONTHS]
+  };
+}
+
+function normalizePeople(raw) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const adults = Number.isFinite(raw.adults) ? Math.max(0, Math.floor(raw.adults)) : null;
+  const children = Number.isFinite(raw.children)
+    ? Math.max(0, Math.floor(raw.children))
+    : null;
+
+  if (adults === null || children === null) return null;
+
+  let child_birth_months = Array.isArray(raw.child_birth_months)
+    ? raw.child_birth_months
+        .map((s) => String(s))
+        .filter((s) => /^\d{4}-\d{2}$/.test(s))
+    : [];
+
+  if (child_birth_months.length === 0 && Array.isArray(raw.child_birth_years)) {
+    child_birth_months = raw.child_birth_years
+      .map((y) => Number(y))
+      .filter((y) => Number.isFinite(y))
+      .map((y) => `${y}-01`);
+  }
+
+  if (children > 0 && child_birth_months.length === 0) {
+    child_birth_months = Array(children).fill(DEFAULT_CHILD_BIRTH_MONTHS[0]);
+  }
+
+  if (children === 0) {
+    child_birth_months = [];
+  }
+
+  if (child_birth_months.length !== children && children > 0) {
+    child_birth_months = Array(children).fill(
+      child_birth_months[0] || DEFAULT_CHILD_BIRTH_MONTHS[0]
+    );
+  }
+
+  return { adults, children, child_birth_months };
+}
+
 // Slots autorisés (pour éviter les typos)
 const ALLOWED_SLOTS = new Set([
   "mon_lunch",
@@ -237,16 +287,16 @@ router.post("/prepare", async (req, res) => {
         seasonality_required: true
       },
       slots: {
-        mon_dinner: { recipe_id: "rcp_0001", validated: false },
-        tue_dinner: { recipe_id: "rcp_0002", validated: false },
-        wed_lunch: { recipe_id: "rcp_0003", validated: false },
-        wed_dinner: { recipe_id: "rcp_0004", validated: false },
-        thu_dinner: { recipe_id: "rcp_0005", validated: false },
-        fri_dinner: { recipe_id: "rcp_0006", validated: false },
-        sat_lunch: { recipe_id: "rcp_0003", validated: false },
-        sat_dinner: { recipe_id: "rcp_0002", validated: false },
-        sun_lunch: { recipe_id: "rcp_0004", validated: false },
-        sun_dinner: { recipe_id: "rcp_0001", validated: false }
+        mon_dinner: { recipe_id: "rcp_0001", validated: false, people: defaultPeople() },
+        tue_dinner: { recipe_id: "rcp_0002", validated: false, people: defaultPeople() },
+        wed_lunch: { recipe_id: "rcp_0003", validated: false, people: defaultPeople() },
+        wed_dinner: { recipe_id: "rcp_0004", validated: false, people: defaultPeople() },
+        thu_dinner: { recipe_id: "rcp_0005", validated: false, people: defaultPeople() },
+        fri_dinner: { recipe_id: "rcp_0006", validated: false, people: defaultPeople() },
+        sat_lunch: { recipe_id: "rcp_0003", validated: false, people: defaultPeople() },
+        sat_dinner: { recipe_id: "rcp_0002", validated: false, people: defaultPeople() },
+        sun_lunch: { recipe_id: "rcp_0004", validated: false, people: defaultPeople() },
+        sun_dinner: { recipe_id: "rcp_0001", validated: false, people: defaultPeople() }
       },
       updated_at: nowIso()
     };
@@ -295,7 +345,8 @@ router.patch("/:week_id/slots/init-validation", async (req, res) => {
       // On garde les autres champs, on impose validated selon presence recipe_id
       week.slots[slot] = {
         ...cur,
-        validated: hasRecipe
+        validated: hasRecipe,
+        people: cur.people || defaultPeople()
       };
     }
 
@@ -338,6 +389,7 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
 
     const recipeIdRaw = req.body?.recipe_id;
     const freeTextRaw = req.body?.free_text;
+    const peopleRaw = req.body?.people;
 
     // recipe_id: string | null | undefined
     let recipe_id = undefined;
@@ -355,6 +407,8 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
       const s = String(freeTextRaw);
       free_text = s; // peut être "" si tu veux explicitement vider
     }
+
+    const people = normalizePeople(peopleRaw);
 
     // Charger semaine
     const p = path.join(WEEKS_DIR, `${weekId}.json`);
@@ -380,6 +434,12 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
       } else {
         week.slots[slot].free_text = free_text;
       }
+    }
+
+    if (people) {
+      week.slots[slot].people = people;
+    } else if (!week.slots[slot].people) {
+      week.slots[slot].people = defaultPeople();
     }
 
     // Recalcul validated (important: recipe_id placeholder != validated par défaut)

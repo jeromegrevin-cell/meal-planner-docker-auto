@@ -42,6 +42,13 @@ const PROPOSAL_SLOTS = ALL_SLOTS.filter(
   (slot) => !FREE_TEXT_ALLOWED_SLOTS.has(slot)
 );
 
+const DEFAULT_CHILD_BIRTH_MONTH = "2016-08";
+const DEFAULT_PEOPLE = {
+  adults: 2,
+  children: 1,
+  child_birth_months: [DEFAULT_CHILD_BIRTH_MONTH]
+};
+
 function getSlotLabel(slotKey) {
   return SLOT_LABELS_FR[slotKey] || slotKey;
 }
@@ -59,11 +66,17 @@ async function fetchJson(url, options) {
   return j;
 }
 
-function buildOtherProposalPrompt(slot) {
+function buildOtherProposalPrompt(slot, people, childAges) {
   const label = getSlotLabel(slot);
+  const adults = people?.adults ?? DEFAULT_PEOPLE.adults;
+  const children = people?.children ?? DEFAULT_PEOPLE.children;
+  const agesText =
+    children > 0 && Array.isArray(childAges) && childAges.length > 0
+      ? ` (enfant: ${childAges.join(", ")} ans)`
+      : "";
   return (
     `Propose une AUTRE recette pour ${label}.\n` +
-    `Contraintes: 3 personnes (2 adultes + 1 enfant 9 ans), hiver, simple, budget Lidl/Carrefour.\n` +
+    `Contraintes: ${adults} adulte(s) + ${children} enfant(s)${agesText}, hiver, simple, budget Lidl/Carrefour.\n` +
     `Réponds en 1 ligne: "Titre - idée rapide".`
   );
 }
@@ -136,6 +149,42 @@ function formatDateFr(dateStr) {
     year: "numeric"
   }).format(d);
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function normalizePeopleFromSlot(slotPeople) {
+  if (!slotPeople || typeof slotPeople !== "object") return { ...DEFAULT_PEOPLE };
+
+  const adults = Number.isFinite(slotPeople.adults) ? slotPeople.adults : DEFAULT_PEOPLE.adults;
+  const children = Number.isFinite(slotPeople.children) ? slotPeople.children : DEFAULT_PEOPLE.children;
+
+  let child_birth_months = Array.isArray(slotPeople.child_birth_months)
+    ? slotPeople.child_birth_months
+        .map((s) => String(s))
+        .filter((s) => /^\d{4}-\d{2}$/.test(s))
+    : [];
+
+  if (child_birth_months.length === 0 && Array.isArray(slotPeople.child_birth_years)) {
+    child_birth_months = slotPeople.child_birth_years
+      .map((y) => Number(y))
+      .filter((y) => Number.isFinite(y))
+      .map((y) => `${y}-01`);
+  }
+
+  if (children > 0 && child_birth_months.length === 0) {
+    child_birth_months = Array(children).fill(DEFAULT_CHILD_BIRTH_MONTH);
+  }
+
+  if (children === 0) {
+    child_birth_months = [];
+  }
+
+  if (child_birth_months.length !== children && children > 0) {
+    child_birth_months = Array(children).fill(
+      child_birth_months[0] || DEFAULT_CHILD_BIRTH_MONTH
+    );
+  }
+
+  return { adults, children, child_birth_months };
 }
 
 function getWeekId(dateStr) {
@@ -328,6 +377,26 @@ export default function CockpitWeek() {
     setPrepEnd("");
   }
 
+  async function onPeopleChange(slot, adults, children) {
+    if (!week?.week_id) return;
+    const child_birth_months =
+      children > 0 ? Array(children).fill(DEFAULT_CHILD_BIRTH_MONTH) : [];
+
+    await fetchJson(
+      `/api/weeks/${encodeURIComponent(week.week_id)}/slots/${encodeURIComponent(slot)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          people: { adults, children, child_birth_months }
+        })
+      }
+    );
+
+    const w = await loadWeek(week.week_id);
+    setWeek(w);
+  }
+
   async function onValidateProposal(slot, proposal) {
     const j = await fetchJson(
       `/api/weeks/${encodeURIComponent(week.week_id)}/slots/${encodeURIComponent(
@@ -355,12 +424,15 @@ export default function CockpitWeek() {
   }
 
   async function onOtherProposal(slot) {
+    const s = week?.slots?.[slot] || {};
+    const people = normalizePeopleFromSlot(s?.people);
+    const childAges = getChildAges(people.child_birth_years);
     await fetchJson("/api/chat/current", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         week_id: week.week_id,
-        message: buildOtherProposalPrompt(slot),
+        message: buildOtherProposalPrompt(slot, people, childAges),
         context: { slot }
       })
     });
@@ -376,6 +448,24 @@ export default function CockpitWeek() {
     if (s.recipe_id) return recipeTitles[s.recipe_id] || s.recipe_id;
     if (s.free_text) return s.free_text;
     return "";
+  }
+
+  function getChildAges(child_birth_months) {
+    const ref = week?.date_start
+      ? new Date(week.date_start + "T00:00:00")
+      : new Date();
+    const refYear = ref.getFullYear();
+    const refMonth = ref.getMonth() + 1;
+
+    return (child_birth_months || [])
+      .map((ym) => {
+        const [y, m] = String(ym).split("-").map((n) => Number(n));
+        if (!Number.isFinite(y) || !Number.isFinite(m)) return null;
+        let age = refYear - y;
+        if (refMonth < m) age -= 1;
+        return age;
+      })
+      .filter((a) => Number.isFinite(a));
   }
 
   async function openProposalModal(slot, proposal) {
@@ -405,6 +495,7 @@ export default function CockpitWeek() {
     setProposalLoading(true);
     setProposalError(null);
     try {
+      const slotPeople = normalizePeopleFromSlot(week?.slots?.[slot]?.people);
       const j = await fetchJson("/api/chat/proposals/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -412,7 +503,8 @@ export default function CockpitWeek() {
           week_id: week.week_id,
           slot,
           proposal_id: proposal.proposal_id,
-          title: proposal.title
+          title: proposal.title,
+          people: slotPeople
         })
       });
       setProposalRecipe({ content: j.preview });
@@ -498,6 +590,8 @@ export default function CockpitWeek() {
             const showProposals = !isValidated;
 
             const proposals = menuProposals?.[slot] || [];
+            const people = normalizePeopleFromSlot(s?.people);
+            const childAges = getChildAges(people.child_birth_years);
 
             return (
               <tr
@@ -510,6 +604,42 @@ export default function CockpitWeek() {
               >
                 <td style={{ width: 220, verticalAlign: "top", padding: "10px 8px" }}>
                   {getSlotLabel(slot)}
+
+                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
+                    {people.adults}A / {people.children}E
+                    {childAges.length > 0 ? ` (${childAges.join(", ")} ans)` : ""}
+                  </div>
+
+                  <div
+                    style={{ display: "flex", gap: 6, marginTop: 6 }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <select
+                      value={people.adults}
+                      onChange={(e) =>
+                        onPeopleChange(slot, Number(e.target.value), people.children)
+                      }
+                    >
+                      {[1, 2, 3, 4].map((v) => (
+                        <option key={`a-${slot}-${v}`} value={v}>
+                          {v}A
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={people.children}
+                      onChange={(e) =>
+                        onPeopleChange(slot, people.adults, Number(e.target.value))
+                      }
+                    >
+                      {[0, 1, 2, 3].map((v) => (
+                        <option key={`c-${slot}-${v}`} value={v}>
+                          {v}E
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </td>
 
                 <td style={{ verticalAlign: "top", padding: "10px 8px" }}>

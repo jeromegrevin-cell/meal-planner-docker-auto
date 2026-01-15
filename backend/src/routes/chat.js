@@ -52,6 +52,15 @@ function newProposalId() {
   return `p_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function peopleSignature(people) {
+  const adults = Number.isFinite(people?.adults) ? people.adults : 0;
+  const children = Number.isFinite(people?.children) ? people.children : 0;
+  const months = Array.isArray(people?.child_birth_months)
+    ? people.child_birth_months.join(",")
+    : "";
+  return `${adults}|${children}|${months}`;
+}
+
 async function ensureChatFile(weekId) {
   await ensureDir(CHAT_DIR);
 
@@ -373,6 +382,7 @@ router.post("/proposals/preview", async (req, res) => {
   const slot = String(req.body?.slot || "");
   const proposalId = String(req.body?.proposal_id || "");
   const title = String(req.body?.title || "");
+  const people = req.body?.people || null;
 
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
   if (!slot) return res.status(400).json({ error: "missing_slot" });
@@ -385,8 +395,10 @@ router.post("/proposals/preview", async (req, res) => {
     const idx = list.findIndex((x) => x?.proposal_id === proposalId);
     if (idx === -1) return res.status(404).json({ error: "proposal_not_found" });
 
-    // Return cached preview if present
-    if (list[idx].preview) {
+    const signature = peopleSignature(people);
+
+    // Return cached preview if present and people match
+    if (list[idx].preview && list[idx].preview_people_signature === signature) {
       return res.json({ ok: true, preview: list[idx].preview });
     }
 
@@ -396,8 +408,13 @@ router.post("/proposals/preview", async (req, res) => {
     }
 
     const model = getModel();
+    const peopleLine = people
+      ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
+      : "";
+
     const prompt = [
       `Génère une fiche courte de recette pour : "${title}".`,
+      peopleLine,
       "Réponds STRICTEMENT en JSON avec ces clés:",
       '{"description_courte":"...", "ingredients":[{"item":"...","qty":"...","unit":"..."}], "preparation_steps":["...","..."]}',
       "IMPORTANT: preparation_steps doit contenir au moins 3 étapes."
@@ -417,6 +434,7 @@ router.post("/proposals/preview", async (req, res) => {
     }
 
     list[idx].preview = preview;
+    list[idx].preview_people_signature = signature;
     data.menu_proposals[slot] = list;
     data.updated_at = nowIso();
     await writeJson(p, data);
