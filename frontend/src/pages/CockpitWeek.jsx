@@ -384,12 +384,38 @@ export default function CockpitWeek() {
     setProposalError(null);
 
     const rid = proposal?.recipe_id || null;
-    if (!rid) return;
+    if (!rid) {
+      await loadProposalPreview(slot, proposal);
+      return;
+    }
 
     setProposalLoading(true);
     try {
       const r = await fetchJson(`/api/recipes/${encodeURIComponent(rid)}`);
       setProposalRecipe(r);
+    } catch (e) {
+      setProposalError(e.message || String(e));
+    } finally {
+      setProposalLoading(false);
+    }
+  }
+
+  async function loadProposalPreview(slot, proposal) {
+    if (!week?.week_id || !proposal?.proposal_id || !proposal?.title) return;
+    setProposalLoading(true);
+    setProposalError(null);
+    try {
+      const j = await fetchJson("/api/chat/proposals/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          week_id: week.week_id,
+          slot,
+          proposal_id: proposal.proposal_id,
+          title: proposal.title
+        })
+      });
+      setProposalRecipe({ content: j.preview });
     } catch (e) {
       setProposalError(e.message || String(e));
     } finally {
@@ -687,7 +713,7 @@ export default function CockpitWeek() {
 
               {!proposalLoading && !proposalRecipe && !proposalError && (
                 <div style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
-                  Proposition IA non sauvegardée (pas encore de fiche recette).
+                  Aperçu indisponible.
                 </div>
               )}
 
@@ -712,6 +738,22 @@ export default function CockpitWeek() {
                             </li>
                           ))}
                         </ul>
+                      </div>
+                    )}
+
+                  {Array.isArray(proposalRecipe?.content?.preparation_steps) &&
+                    proposalRecipe.content.preparation_steps.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                          Étapes
+                        </div>
+                        <ol style={{ margin: 0, paddingLeft: 18 }}>
+                          {proposalRecipe.content.preparation_steps.map((step, idx) => (
+                            <li key={idx} style={{ fontSize: 13 }}>
+                              {step}
+                            </li>
+                          ))}
+                        </ol>
                       </div>
                     )}
                 </div>
