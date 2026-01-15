@@ -122,10 +122,6 @@ function formatConstraints(c) {
     );
   }
 
-  if (c.global_constraints?.seasonal_veg_required) {
-    out.push("Les légumes doivent être de saison.");
-  }
-
   if (Array.isArray(c.global_constraints?.status_flow) && c.global_constraints.status_flow.length > 0) {
     out.push(`Statuts possibles : ${c.global_constraints.status_flow.join(", ")}.`);
   }
@@ -187,6 +183,15 @@ function normalizePeopleFromSlot(slotPeople) {
   return { adults, children, child_birth_months };
 }
 
+function buildPeopleSignature(people) {
+  const adults = Number(people?.adults || 0);
+  const children = Number(people?.children || 0);
+  const months = Array.isArray(people?.child_birth_months)
+    ? people.child_birth_months.map(String)
+    : [];
+  return `${adults}|${children}|${months.join(",")}`;
+}
+
 function getWeekId(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   const target = new Date(d.valueOf());
@@ -214,12 +219,15 @@ export default function CockpitWeek() {
 
   const [recipe, setRecipe] = useState(null);
   const [recipeTitles, setRecipeTitles] = useState({});
+  const [recipeCache, setRecipeCache] = useState({});
 
   const [constraintsOpen, setConstraintsOpen] = useState(false);
   const [constraints, setConstraints] = useState(null);
 
   const [menuProposals, setMenuProposals] = useState({});
   const [savedProposalIds, setSavedProposalIds] = useState({});
+
+  const [previewCache, setPreviewCache] = useState({});
 
   // Champ libre local (UI only pour l’instant)
   const [freeTextBySlot, setFreeTextBySlot] = useState({});
@@ -234,6 +242,12 @@ export default function CockpitWeek() {
   const [proposalRecipe, setProposalRecipe] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState(null);
+
+  // Validated recipe modal
+  const [recipeModal, setRecipeModal] = useState(null); // { slot }
+  const [recipeModalData, setRecipeModalData] = useState(null);
+  const [recipeModalLoading, setRecipeModalLoading] = useState(false);
+  const [recipeModalError, setRecipeModalError] = useState(null);
 
   // --------------------
   // Derived
@@ -280,6 +294,7 @@ export default function CockpitWeek() {
     const r = await fetchJson(`/api/recipes/${encodeURIComponent(recipeId)}`);
     setRecipe(r);
     setRecipeTitles((p) => ({ ...p, [recipeId]: r.title || recipeId }));
+    setRecipeCache((p) => ({ ...p, [recipeId]: r }));
   }
 
   async function loadMenuProposals(weekId) {
@@ -367,7 +382,6 @@ export default function CockpitWeek() {
         date_end: prepEnd
       })
     });
-
     await loadWeeksList();
     await onChangeWeek(prepWeekId);
     await generateProposals(prepWeekId);
@@ -398,6 +412,13 @@ export default function CockpitWeek() {
   }
 
   async function onValidateProposal(slot, proposal) {
+    const recipeId = proposal?.recipe_id ? String(proposal.recipe_id) : "";
+    const title = String(proposal?.title || "").trim();
+
+    const payload = recipeId
+      ? { recipe_id: recipeId, free_text: null }
+      : { recipe_id: null, free_text: title };
+
     const j = await fetchJson(
       `/api/weeks/${encodeURIComponent(week.week_id)}/slots/${encodeURIComponent(
         slot
@@ -405,10 +426,7 @@ export default function CockpitWeek() {
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipe_id: proposal.recipe_id || null,
-          free_text: proposal.title || ""
-        })
+        body: JSON.stringify(payload)
       }
     );
 
@@ -423,10 +441,30 @@ export default function CockpitWeek() {
     await loadMenuProposals(week.week_id);
   }
 
+  async function onDevalidateSlot(slot) {
+    if (!week?.week_id) return;
+    try {
+      await fetchJson(
+        `/api/weeks/${encodeURIComponent(week.week_id)}/slots/${encodeURIComponent(slot)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ validated: false })
+        }
+      );
+      const w = await loadWeek(week.week_id);
+      setWeek(w);
+      if (slot === selectedSlot) setRecipe(null);
+      await loadMenuProposals(week.week_id);
+    } catch (e) {
+      alert(`Devalider failed: ${e.message}`);
+    }
+  }
+
   async function onOtherProposal(slot) {
     const s = week?.slots?.[slot] || {};
     const people = normalizePeopleFromSlot(s?.people);
-    const childAges = getChildAges(people.child_birth_years);
+    const childAges = getChildAges(people.child_birth_months);
     await fetchJson("/api/chat/current", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -522,6 +560,79 @@ export default function CockpitWeek() {
     setProposalLoading(false);
   }
 
+  async function openRecipeModal(slot) {
+    setRecipeModal({ slot });
+    setRecipeModalData(null);
+    setRecipeModalError(null);
+    setRecipeModalLoading(true);
+
+    const slotData = week?.slots?.[slot] || {};
+    const rid = slotData.recipe_id || null;
+    const freeText = slotData.free_text || null;
+    const slotPeople = normalizePeopleFromSlot(slotData.people);
+    const signature = buildPeopleSignature(slotPeople);
+
+    try {
+      if (rid) {
+        const cached = recipeCache[rid];
+        if (cached) {
+          setRecipeModalData(cached);
+          setRecipeModalLoading(false);
+          return;
+        }
+
+        setRecipeModalData({ title: recipeTitles[rid] || rid });
+        const r = await fetchJson(`/api/recipes/${encodeURIComponent(rid)}`);
+        setRecipeModalData(r);
+        setRecipeCache((prev) => ({ ...prev, [rid]: r }));
+        setRecipeModalLoading(false);
+        return;
+      }
+
+      if (freeText) {
+        const cacheKey = `${freeText}__${signature}`;
+        const cachedPreview = previewCache[cacheKey];
+
+        if (cachedPreview?.content) {
+          setRecipeModalData({ title: freeText, content: cachedPreview.content });
+          setRecipeModalLoading(false);
+          return;
+        }
+
+        setRecipeModalData({ title: freeText });
+        const j = await fetchJson("/api/chat/preview-title", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: freeText,
+            people: slotPeople
+          })
+        });
+
+        setRecipeModalData({ title: freeText, content: j.preview });
+        setPreviewCache((prev) => ({
+          ...prev,
+          [cacheKey]: { content: j.preview }
+        }));
+        setRecipeModalLoading(false);
+        return;
+      }
+
+      setRecipeModalError("Recette non disponible.");
+    } catch (e) {
+      setRecipeModalError(e.message || String(e));
+    } finally {
+      setRecipeModalLoading(false);
+    }
+  }
+
+  function closeRecipeModal() {
+    setRecipeModal(null);
+    setRecipeModalData(null);
+    setRecipeModalError(null);
+    setRecipeModalLoading(false);
+  }
+
   // --------------------
   // Render
   // --------------------
@@ -591,7 +702,6 @@ export default function CockpitWeek() {
 
             const proposals = menuProposals?.[slot] || [];
             const people = normalizePeopleFromSlot(s?.people);
-            const childAges = getChildAges(people.child_birth_years);
 
             return (
               <tr
@@ -607,7 +717,6 @@ export default function CockpitWeek() {
 
                   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
                     {people.adults}A / {people.children}E
-                    {childAges.length > 0 ? ` (${childAges.join(", ")} ans)` : ""}
                   </div>
 
                   <div
@@ -644,7 +753,27 @@ export default function CockpitWeek() {
 
                 <td style={{ verticalAlign: "top", padding: "10px 8px" }}>
                   {isValidated ? (
-                    <div style={{ fontWeight: 700 }}>{validatedLabel(s)}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ fontWeight: 700 }}>{validatedLabel(s)}</div>
+                      <button
+                        style={{ padding: "4px 8px", fontSize: 12 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openRecipeModal(slot);
+                        }}
+                      >
+                        Voir
+                      </button>
+                      <button
+                        style={{ padding: "4px 8px", fontSize: 12 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDevalidateSlot(slot);
+                        }}
+                      >
+                        Dévalider
+                      </button>
+                    </div>
                   ) : (
                     <>
                       {canFreeText && (
@@ -692,14 +821,7 @@ export default function CockpitWeek() {
                               }}
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <span style={{ flex: 1 }}>
-                                {p.title}
-                                {saved ? (
-                                  <span style={{ marginLeft: 8, opacity: 0.7 }}>
-                                    (Sauvegardée)
-                                  </span>
-                                ) : null}
-                              </span>
+                              <span style={{ flex: 1 }}>{p.title}</span>
 
                               <button
                                 style={{ padding: "4px 8px", fontSize: 12 }}
@@ -889,6 +1011,95 @@ export default function CockpitWeek() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {recipeModal && (
+        <div
+          onClick={closeRecipeModal}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.25)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(760px, 96vw)",
+              background: "#fff",
+              borderRadius: 10,
+              padding: 16,
+              border: "1px solid #ddd"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{ fontWeight: 800 }}>
+                Recette validée — {getSlotLabel(recipeModal.slot)}
+              </div>
+              <button
+                onClick={closeRecipeModal}
+                style={{ marginLeft: "auto", padding: "6px 10px" }}
+              >
+                Fermer
+              </button>
+            </div>
+
+            {recipeModalLoading && (
+              <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
+            )}
+            {recipeModalError && (
+              <div style={{ marginTop: 8, color: "#a00" }}>
+                {recipeModalError}
+              </div>
+            )}
+            {recipeModalData && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>
+                  {recipeModalData.title || recipeModalData.recipe_id}
+                </div>
+                {recipeModalData?.content?.description_courte && (
+                  <div style={{ fontSize: 13, opacity: 0.9 }}>
+                    {recipeModalData.content.description_courte}
+                  </div>
+                )}
+                {Array.isArray(recipeModalData?.content?.ingredients) &&
+                  recipeModalData.content.ingredients.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                        Ingrédients
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {recipeModalData.content.ingredients.map((ing, idx) => (
+                          <li key={idx} style={{ fontSize: 13 }}>
+                            {ing.qty} {ing.unit} {ing.item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                {Array.isArray(recipeModalData?.content?.preparation_steps) &&
+                  recipeModalData.content.preparation_steps.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                        Étapes
+                      </div>
+                      <ol style={{ margin: 0, paddingLeft: 18 }}>
+                        {recipeModalData.content.preparation_steps.map((step, idx) => (
+                          <li key={idx} style={{ fontSize: 13 }}>
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+              </div>
+            )}
           </div>
         </div>
       )}
