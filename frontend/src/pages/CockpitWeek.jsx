@@ -891,7 +891,15 @@ export default function CockpitWeek() {
               <button
                 onClick={() => setConstraintsOpen(false)}
                 aria-label="Fermer"
-                style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 16 }}
+                style={{
+                  marginLeft: "auto",
+                  padding: 0,
+                  fontSize: 18,
+                  lineHeight: 1,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer"
+                }}
               >
                 x
               </button>
@@ -944,7 +952,15 @@ export default function CockpitWeek() {
               <button
                 onClick={closeProposalModal}
                 aria-label="Fermer"
-                style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 16 }}
+                style={{
+                  marginLeft: "auto",
+                  padding: 0,
+                  fontSize: 18,
+                  lineHeight: 1,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer"
+                }}
               >
                 x
               </button>
@@ -1047,7 +1063,15 @@ export default function CockpitWeek() {
               <button
                 onClick={closeRecipeModal}
                 aria-label="Fermer"
-                style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 16 }}
+                style={{
+                  marginLeft: "auto",
+                  padding: 0,
+                  fontSize: 18,
+                  lineHeight: 1,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer"
+                }}
               >
                 x
               </button>
