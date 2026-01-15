@@ -238,7 +238,6 @@ export default function CockpitWeek() {
   const [constraints, setConstraints] = useState(null);
 
   const [menuProposals, setMenuProposals] = useState({});
-  const [savedProposalIds, setSavedProposalIds] = useState({});
   const [savedRecipeIdsBySlot, setSavedRecipeIdsBySlot] = useState({});
   const [uploadedRecipeIdsBySlot, setUploadedRecipeIdsBySlot] = useState({});
 
@@ -514,11 +513,17 @@ export default function CockpitWeek() {
     await loadMenuProposals(week.week_id);
   }
 
-  async function onSaveProposal(slot, p) {
-    const title = String(p?.title || "").trim();
+  async function onSaveValidatedSlot(slot) {
+    const s = week?.slots?.[slot] || {};
+    if (s.validated !== true) return;
+
+    const rid = s.recipe_id || null;
+    const title = String(
+      s.free_text || (rid ? recipeTitles[rid] || rid : "")
+    ).trim();
+
     if (!title) return;
 
-    const s = week?.slots?.[slot] || {};
     const people = normalizePeopleFromSlot(s?.people);
 
     try {
@@ -529,14 +534,13 @@ export default function CockpitWeek() {
           title,
           week_id: week?.week_id,
           slot,
-          source: { type: "MENU_PROPOSAL" },
+          source: { type: "MENU_VALIDATED" },
           people
         })
       });
       if (j?.recipe_id) {
         setSavedRecipeIdsBySlot((prev) => ({ ...prev, [slot]: j.recipe_id }));
       }
-      setSavedProposalIds((x) => ({ ...x, [p.proposal_id]: true }));
     } catch (e) {
       alert(`Sauvegarder failed: ${e.message}`);
     }
@@ -887,6 +891,24 @@ export default function CockpitWeek() {
                         }}
                         style={{ padding: "4px 6px" }}
                       />
+                      {(() => {
+                        const rid = s?.recipe_id || null;
+                        const meta = rid ? recipeCache?.[rid] : null;
+                        const isDrive = meta?.source?.type === "DRIVE";
+                        const saved = !!savedRecipeIdsBySlot?.[slot];
+                        return !isDrive ? (
+                          <IconButton
+                            icon="💾"
+                            label="Sauvegarder"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSaveValidatedSlot(slot);
+                            }}
+                            disabled={saved}
+                            style={{ padding: "4px 6px" }}
+                          />
+                        ) : null;
+                      })()}
                       <IconButton
                         icon="❌"
                         label="Dévalider"
@@ -929,7 +951,6 @@ export default function CockpitWeek() {
                         )}
                       {showProposals &&
                         proposals.map((p) => {
-                          const saved = !!savedProposalIds[p.proposal_id];
                           return (
                             <div
                               key={p.proposal_id}
@@ -965,13 +986,6 @@ export default function CockpitWeek() {
                                 icon="👁️"
                                 label="Voir"
                                 onClick={() => openProposalModal(slot, p)}
-                                style={{ padding: "4px 6px" }}
-                              />
-                              <IconButton
-                                icon="💾"
-                                label="Sauvegarder"
-                                onClick={() => onSaveProposal(slot, p)}
-                                disabled={saved}
                                 style={{ padding: "4px 6px" }}
                               />
                             </div>
