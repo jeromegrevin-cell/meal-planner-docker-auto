@@ -1,5 +1,6 @@
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import IconButton from "../components/IconButton.jsx";
 
 const WEEKDAYS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const SLOT_LABELS = { lunch: "Déj", dinner: "Dîn" };
@@ -44,6 +45,7 @@ function totalPeopleFromSlot(slotData) {
 }
 
 export default function Home() {
+  const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   );
@@ -227,18 +229,34 @@ export default function Home() {
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={() => setCurrentMonth(new Date())}>Aujourd'hui</button>
-        <button onClick={() => setCurrentMonth(addDays(currentMonth, -30))}>‹</button>
+        <IconButton
+          icon="🔄"
+          label="Aujourd'hui"
+          onClick={() => setCurrentMonth(new Date())}
+        />
+        <IconButton
+          icon="‹"
+          label="Mois précédent"
+          onClick={() => setCurrentMonth(addDays(currentMonth, -30))}
+        />
         <div style={{ fontSize: 20, fontWeight: 700 }}>{monthLabel}</div>
-        <button onClick={() => setCurrentMonth(addDays(currentMonth, 30))}>›</button>
+        <IconButton
+          icon="›"
+          label="Mois suivant"
+          onClick={() => setCurrentMonth(addDays(currentMonth, 30))}
+        />
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <Link to="/weeks" style={{ textDecoration: "none" }}>
-            <button>Menus hebdo</button>
-          </Link>
-          <Link to="/tokens" style={{ textDecoration: "none" }}>
-            <button>Tokens</button>
-          </Link>
+          <IconButton
+            icon="📝"
+            label="Menus hebdo"
+            onClick={() => navigate("/weeks")}
+          />
+          <IconButton
+            icon="👁️"
+            label="Tokens"
+            onClick={() => navigate("/tokens")}
+          />
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import IconButton from "../components/IconButton.jsx";
 
 // --------------------
 // Slots - FR labels + order
@@ -779,25 +780,27 @@ export default function CockpitWeek() {
           onChange={(e) => setPrepEnd(e.target.value)}
         />
 
-        <button onClick={onPrepareWeek}>Préparer</button>
-        <button
+        <IconButton icon="📝" label="Préparer" onClick={onPrepareWeek} />
+        <IconButton
+          icon="📝"
+          label="Proposer menus"
           onClick={() => generateProposals(week?.week_id)}
           disabled={!week?.week_id}
-        >
-          Proposer menus
-        </button>
-        <button
+        />
+        <IconButton
+          icon="👁️"
+          label="Contraintes"
           onClick={() =>
             loadConstraints(week.week_id).then(() => setConstraintsOpen(true))
           }
           disabled={!week?.week_id}
-        >
-          Contraintes
-        </button>
-
-        <button onClick={onUploadWeek} disabled={!week?.week_id}>
-          Upload
-        </button>
+        />
+        <IconButton
+          icon="☁️⬆️"
+          label="Upload sur Drive"
+          onClick={onUploadWeek}
+          disabled={!week?.week_id}
+        />
       </div>
 
       {week?.date_start && week?.date_end && (
@@ -875,24 +878,24 @@ export default function CockpitWeek() {
                       <div style={{ fontWeight: 700 }}>
                         {validatedLabel(s)} {totalPeople ? `· ${totalPeople} pers.` : ""}
                       </div>
-                      <button
-                        style={{ padding: "4px 8px", fontSize: 12 }}
+                      <IconButton
+                        icon="👁️"
+                        label="Voir"
                         onClick={(e) => {
                           e.stopPropagation();
                           openRecipeModal(slot);
                         }}
-                      >
-                        Voir
-                      </button>
-                      <button
-                        style={{ padding: "4px 8px", fontSize: 12 }}
+                        style={{ padding: "4px 6px" }}
+                      />
+                      <IconButton
+                        icon="❌"
+                        label="Dévalider"
                         onClick={(e) => {
                           e.stopPropagation();
                           onDevalidateSlot(slot);
                         }}
-                      >
-                        Dévalider
-                      </button>
+                        style={{ padding: "4px 6px" }}
+                      />
                     </div>
                   ) : (
                     <>
@@ -946,34 +949,31 @@ export default function CockpitWeek() {
                                 {p.title} {totalPeople ? `· ${totalPeople} pers.` : ""}
                               </span>
 
-                              <button
-                                style={{ padding: "4px 8px", fontSize: 12 }}
+                              <IconButton
+                                icon="✅"
+                                label="Valider pour la semaine"
                                 onClick={() => onValidateProposal(slot, p)}
-                              >
-                                Valider
-                              </button>
-
-                              <button
-                                style={{ padding: "4px 8px", fontSize: 12 }}
+                                style={{ padding: "4px 6px" }}
+                              />
+                              <IconButton
+                                icon="📝"
+                                label="Proposer"
                                 onClick={() => onOtherProposal(slot)}
-                              >
-                                Autre
-                              </button>
-
-                              <button
-                                style={{ padding: "4px 8px", fontSize: 12 }}
+                                style={{ padding: "4px 6px" }}
+                              />
+                              <IconButton
+                                icon="👁️"
+                                label="Voir"
                                 onClick={() => openProposalModal(slot, p)}
-                              >
-                                Voir
-                              </button>
-
-                              <button
-                                style={{ padding: "4px 8px", fontSize: 12 }}
+                                style={{ padding: "4px 6px" }}
+                              />
+                              <IconButton
+                                icon="💾"
+                                label="Sauvegarder"
                                 onClick={() => onSaveProposal(slot, p)}
                                 disabled={saved}
-                              >
-                                Sauvegarder
-                              </button>
+                                style={{ padding: "4px 6px" }}
+                              />
                             </div>
                           );
                         })}
