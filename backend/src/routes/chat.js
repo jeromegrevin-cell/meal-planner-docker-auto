@@ -59,7 +59,6 @@ async function ensureChatFile(weekId) {
   try {
     const data = await readJson(p);
 
-    // backward compatibility: ensure menu_proposals exists
     if (!data.menu_proposals || typeof data.menu_proposals !== "object") {
       data.menu_proposals = {};
     }
@@ -71,7 +70,7 @@ async function ensureChatFile(weekId) {
     const fresh = {
       week_id: weekId,
       messages: [],
-      menu_proposals: {}, // Sprint 2.1
+      menu_proposals: {},
       usage_totals: {
         input_tokens: 0,
         output_tokens: 0,
@@ -220,12 +219,6 @@ router.get("/proposals", async (req, res) => {
 
 /**
  * POST /api/chat/proposals/import
- * body:
- * {
- *   week_id: "2026-W04",
- *   proposals: { "mon_dinner": ["Titre 1", ...], "wed_lunch": ["Titre"] }
- * }
- * Tolere: proposals: { slot: [ {title:"..."} ] }
  */
 router.post("/proposals/import", async (req, res) => {
   const weekId = String(req.body?.week_id || "");
@@ -280,6 +273,97 @@ router.post("/proposals/import", async (req, res) => {
 });
 
 /**
+ * POST /api/chat/proposals/generate
+ * body: { week_id, slots, overwrite }
+ */
+router.post("/proposals/generate", async (req, res) => {
+  const weekId = String(req.body?.week_id || "");
+  const slots = Array.isArray(req.body?.slots) ? req.body.slots : [];
+  const overwrite = !!req.body?.overwrite;
+
+  if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (slots.length === 0) {
+    return res.status(400).json({ error: "missing_slots" });
+  }
+
+  try {
+    const { path: p, data } = await ensureChatFile(weekId);
+    if (!data.menu_proposals || typeof data.menu_proposals !== "object") {
+      data.menu_proposals = {};
+    }
+
+    const openai = getOpenAIClient();
+    if (!openai) {
+      return res.status(500).json({ error: "openai_not_configured" });
+    }
+
+    const model = getModel();
+
+    const prompt = [
+      "Donne un menu hebdomadaire au format strict suivant (une ligne par slot):",
+      ...slots.map((s) => `- ${s}: <titre>`),
+      "Aucun texte en plus."
+    ].join("\n");
+
+    const resp = await openai.responses.create({
+      model,
+      input: prompt
+    });
+
+    const rawText = resp.output_text || "";
+    const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    const createdAt = nowIso();
+
+    for (const line of lines) {
+      const m = line.match(/^[-*]\s*([a-z_]+)\s*:\s*(.+)$/i);
+      if (!m) continue;
+
+      const slot = normalizeSlotKey(m[1]);
+      const title = normalizeTitle(m[2]);
+      if (!slot || !title) continue;
+
+      if (!slots.includes(slot)) continue;
+
+      if (overwrite) {
+        data.menu_proposals[slot] = [];
+      } else if (!data.menu_proposals[slot]) {
+        data.menu_proposals[slot] = [];
+      }
+
+      const existingTitles = new Set(
+        (data.menu_proposals[slot] || []).map((p) =>
+          String(p?.title || "").trim().toLowerCase()
+        )
+      );
+      const titleKey = title.toLowerCase();
+      if (existingTitles.has(titleKey)) continue;
+
+      data.menu_proposals[slot].push({
+        proposal_id: newProposalId(),
+        title,
+        source: "CHAT_GENERATED",
+        status: "PROPOSED",
+        to_save: false,
+        created_at: createdAt
+      });
+    }
+
+    data.updated_at = nowIso();
+    await writeJson(p, data);
+
+    res.json({
+      ok: true,
+      week_id: weekId,
+      menu_proposals: data.menu_proposals,
+      raw_text: rawText
+    });
+  } catch (e) {
+    res.status(500).json({ error: "proposals_generate_failed", details: e.message });
+  }
+});
+
+/**
  * GET /api/chat/usage?week_id=2026-W02
  */
 router.get("/usage", async (req, res) => {
@@ -326,20 +410,13 @@ router.get("/usage/all", async (_req, res) => {
 
 // ------------------------------------------------------------------
 // Backward compatibility / Tokens aliases
-// IMPORTANT: must match "" AND "/" when mounted with app.use()
 // ------------------------------------------------------------------
-
 const redirectToUsageAll = (_req, res) => {
   res.redirect(302, "/api/chat/usage/all");
 };
 
-// GET /api/chat
 router.get("", redirectToUsageAll);
-
-// GET /api/chat/
 router.get("/", redirectToUsageAll);
-
-// legacy aliases
 router.get("/tokens", redirectToUsageAll);
 router.get("/usage/tokens", redirectToUsageAll);
 
