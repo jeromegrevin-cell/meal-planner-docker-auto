@@ -68,6 +68,58 @@ function buildOtherProposalPrompt(slot) {
   );
 }
 
+const DAY_LABELS_FR = {
+  mon: "lundi",
+  tue: "mardi",
+  wed: "mercredi",
+  thu: "jeudi",
+  fri: "vendredi",
+  sat: "samedi",
+  sun: "dimanche"
+};
+
+function formatConstraints(c) {
+  if (!c) return [];
+
+  const out = [];
+
+  if (c.global_constraints?.servings) {
+    out.push(`Tous les repas sont prévus pour ${c.global_constraints.servings} personne(s).`);
+  }
+
+  if (Array.isArray(c.rules_readonly?.no_lunch_slots) && c.rules_readonly.no_lunch_slots.length > 0) {
+    const slots = c.rules_readonly.no_lunch_slots.map(getSlotLabel);
+    out.push(`Pas de repas prévu pour : ${slots.join(", ")}.`);
+  }
+
+  if (Array.isArray(c.global_constraints?.no_lunch_days) && c.global_constraints.no_lunch_days.length > 0) {
+    const days = c.global_constraints.no_lunch_days.map((d) => DAY_LABELS_FR[d] || d);
+    out.push(`Pas de déjeuner prévu les : ${days.join(", ")}.`);
+  }
+
+  if (typeof c.rules_readonly?.main_ingredient_max_per_week === "number") {
+    out.push(
+      `Un ingrédient principal ne peut pas être utilisé plus de ${c.rules_readonly.main_ingredient_max_per_week} fois par semaine.`
+    );
+  }
+
+  if (typeof c.rules_readonly?.main_ingredient_min_day_gap_if_used_twice === "number") {
+    out.push(
+      `Si un ingrédient principal est utilisé deux fois, il doit y avoir au moins ${c.rules_readonly.main_ingredient_min_day_gap_if_used_twice} jours d'écart.`
+    );
+  }
+
+  if (c.global_constraints?.seasonal_veg_required) {
+    out.push("Les légumes doivent être de saison.");
+  }
+
+  if (Array.isArray(c.global_constraints?.status_flow) && c.global_constraints.status_flow.length > 0) {
+    out.push(`Statuts possibles : ${c.global_constraints.status_flow.join(", ")}.`);
+  }
+
+  return out;
+}
+
 function addDays(dateStr, days) {
   const d = new Date(dateStr + "T00:00:00");
   d.setDate(d.getDate() + days);
@@ -495,9 +547,53 @@ export default function CockpitWeek() {
       </table>
 
       {constraintsOpen && (
-        <pre onClick={() => setConstraintsOpen(false)}>
-{JSON.stringify(constraints, null, 2)}
-        </pre>
+        <div
+          onClick={() => setConstraintsOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.25)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(680px, 92vw)",
+              background: "#fff",
+              borderRadius: 10,
+              padding: 16,
+              border: "1px solid #ddd"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{ fontWeight: 800 }}>Contraintes</div>
+              <button
+                onClick={() => setConstraintsOpen(false)}
+                style={{ marginLeft: "auto", padding: "6px 10px" }}
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10, fontSize: 13 }}>
+              {formatConstraints(constraints).length > 0 ? (
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {formatConstraints(constraints).map((line, idx) => (
+                    <li key={idx} style={{ marginBottom: 6 }}>
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div style={{ opacity: 0.8 }}>Aucune contrainte disponible.</div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
