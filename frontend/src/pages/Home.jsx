@@ -229,11 +229,7 @@ export default function Home() {
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <IconButton
-          icon="🔄"
-          label="Aujourd'hui"
-          onClick={() => setCurrentMonth(new Date())}
-        />
+        <button onClick={() => setCurrentMonth(new Date())}>Aujourd'hui</button>
         <IconButton
           icon="‹"
           label="Mois précédent"
