@@ -780,21 +780,21 @@ export default function CockpitWeek() {
           onChange={(e) => setPrepEnd(e.target.value)}
         />
 
-        <IconButton icon="📝" label="Préparer" onClick={onPrepareWeek} />
-        <IconButton
-          icon="📝"
-          label="Proposer menus"
+        <button onClick={onPrepareWeek}>Préparer</button>
+        <button
           onClick={() => generateProposals(week?.week_id)}
           disabled={!week?.week_id}
-        />
-        <IconButton
-          icon="👁️"
-          label="Contraintes"
+        >
+          Proposer menus
+        </button>
+        <button
           onClick={() =>
             loadConstraints(week.week_id).then(() => setConstraintsOpen(true))
           }
           disabled={!week?.week_id}
-        />
+        >
+          Contraintes
+        </button>
         <IconButton
           icon="☁️⬆️"
           label="Upload sur Drive"
