@@ -243,16 +243,7 @@ export default function Home() {
         />
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <IconButton
-            icon="📝"
-            label="Menus hebdo"
-            onClick={() => navigate("/weeks")}
-          />
-          <IconButton
-            icon="👁️"
-            label="Tokens"
-            onClick={() => navigate("/tokens")}
-          />
+          <button onClick={() => navigate("/weeks")}>Générer semaine</button>
         </div>
       </div>
 
