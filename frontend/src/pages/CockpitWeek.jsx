@@ -180,6 +180,12 @@ export default function CockpitWeek() {
   const [prepStart, setPrepStart] = useState("");
   const [prepEnd, setPrepEnd] = useState("");
 
+  // Proposal modal
+  const [proposalModal, setProposalModal] = useState(null); // { slot, proposal }
+  const [proposalRecipe, setProposalRecipe] = useState(null);
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [proposalError, setProposalError] = useState(null);
+
   // --------------------
   // Derived
   // --------------------
@@ -372,6 +378,32 @@ export default function CockpitWeek() {
     return "";
   }
 
+  async function openProposalModal(slot, proposal) {
+    setProposalModal({ slot, proposal });
+    setProposalRecipe(null);
+    setProposalError(null);
+
+    const rid = proposal?.recipe_id || null;
+    if (!rid) return;
+
+    setProposalLoading(true);
+    try {
+      const r = await fetchJson(`/api/recipes/${encodeURIComponent(rid)}`);
+      setProposalRecipe(r);
+    } catch (e) {
+      setProposalError(e.message || String(e));
+    } finally {
+      setProposalLoading(false);
+    }
+  }
+
+  function closeProposalModal() {
+    setProposalModal(null);
+    setProposalRecipe(null);
+    setProposalError(null);
+    setProposalLoading(false);
+  }
+
   // --------------------
   // Render
   // --------------------
@@ -529,6 +561,13 @@ export default function CockpitWeek() {
 
                               <button
                                 style={{ padding: "4px 8px", fontSize: 12 }}
+                                onClick={() => openProposalModal(slot, p)}
+                              >
+                                Voir
+                              </button>
+
+                              <button
+                                style={{ padding: "4px 8px", fontSize: 12 }}
                                 onClick={() => onSaveProposal(p)}
                                 disabled={saved}
                               >
@@ -590,6 +629,92 @@ export default function CockpitWeek() {
                 </ul>
               ) : (
                 <div style={{ opacity: 0.8 }}>Aucune contrainte disponible.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {proposalModal && (
+        <div
+          onClick={closeProposalModal}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.25)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(760px, 96vw)",
+              background: "#fff",
+              borderRadius: 10,
+              padding: 16,
+              border: "1px solid #ddd"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{ fontWeight: 800 }}>
+                Recette proposée — {getSlotLabel(proposalModal.slot)}
+              </div>
+              <button
+                onClick={closeProposalModal}
+                style={{ marginLeft: "auto", padding: "6px 10px" }}
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {proposalModal.proposal?.title || ""}
+              </div>
+
+              {proposalLoading && (
+                <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
+              )}
+
+              {proposalError && (
+                <div style={{ marginTop: 8, color: "#a00" }}>
+                  {proposalError}
+                </div>
+              )}
+
+              {!proposalLoading && !proposalRecipe && !proposalError && (
+                <div style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
+                  Proposition IA non sauvegardée (pas encore de fiche recette).
+                </div>
+              )}
+
+              {proposalRecipe && (
+                <div style={{ marginTop: 10 }}>
+                  {proposalRecipe?.content?.description_courte && (
+                    <div style={{ fontSize: 13, opacity: 0.9 }}>
+                      {proposalRecipe.content.description_courte}
+                    </div>
+                  )}
+
+                  {Array.isArray(proposalRecipe?.content?.ingredients) &&
+                    proposalRecipe.content.ingredients.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                          Ingrédients
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {proposalRecipe.content.ingredients.map((ing, idx) => (
+                            <li key={idx} style={{ fontSize: 13 }}>
+                              {ing.qty} {ing.unit} {ing.item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                </div>
               )}
             </div>
           </div>
