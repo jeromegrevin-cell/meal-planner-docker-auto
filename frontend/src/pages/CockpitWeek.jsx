@@ -369,6 +369,16 @@ export default function CockpitWeek() {
     else setRecipe(null);
   }, [selectedSlot, week]);
 
+  useEffect(() => {
+    if (!week?.slots) return;
+    const next = {};
+    for (const slot of FREE_TEXT_ALLOWED_SLOTS) {
+      const saved = week.slots?.[slot]?.free_text;
+      if (typeof saved === "string") next[slot] = saved;
+    }
+    setFreeTextBySlot((prev) => ({ ...next, ...prev }));
+  }, [week?.week_id]);
+
   // --------------------
   // Actions
   // --------------------
@@ -510,6 +520,30 @@ export default function CockpitWeek() {
     if (s.recipe_id) return recipeTitles[s.recipe_id] || s.recipe_id;
     if (s.free_text) return s.free_text;
     return "";
+  }
+
+  async function onFreeTextPersist(slot, value) {
+    if (!week?.week_id) return;
+    try {
+      await fetchJson(
+        `/api/weeks/${encodeURIComponent(week.week_id)}/slots/${encodeURIComponent(
+          slot
+        )}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            recipe_id: null,
+            free_text: value || "",
+            validated: false
+          })
+        }
+      );
+      const w = await loadWeek(week.week_id);
+      setWeek(w);
+    } catch (e) {
+      alert(`Sauvegarde note failed: ${e.message}`);
+    }
   }
 
   function getChildAges(child_birth_months) {
@@ -720,8 +754,10 @@ export default function CockpitWeek() {
           {tableRows.map(([slot, s]) => {
             const isSelected = selectedSlot === slot;
             const isValidated = s?.validated === true;
+            const hasRecipe = Boolean(s?.recipe_id);
 
-            const canFreeText = FREE_TEXT_ALLOWED_SLOTS.has(slot) && !isValidated;
+            const canFreeText =
+              FREE_TEXT_ALLOWED_SLOTS.has(slot) && !isValidated && !hasRecipe;
             const showProposals = !isValidated;
 
             const proposals = menuProposals?.[slot] || [];
@@ -803,26 +839,27 @@ export default function CockpitWeek() {
                     </div>
                   ) : (
                     <>
-                      {canFreeText && (
-                        <textarea
-                          style={{
-                            display: "block",
-                            width: "100%",
-                            marginTop: 6,
-                            padding: 6,
-                            fontSize: 12
-                          }}
-                          rows={2}
-                          value={freeTextBySlot[slot] || ""}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) =>
-                            setFreeTextBySlot((prev) => ({
-                              ...prev,
-                              [slot]: e.target.value
-                            }))
-                          }
-                        />
-                      )}
+                  {canFreeText && (
+                    <textarea
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        marginTop: 6,
+                        padding: 6,
+                        fontSize: 12
+                      }}
+                      rows={2}
+                      value={freeTextBySlot[slot] ?? s?.free_text ?? ""}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) =>
+                        setFreeTextBySlot((prev) => ({
+                          ...prev,
+                          [slot]: e.target.value
+                        }))
+                      }
+                      onBlur={(e) => onFreeTextPersist(slot, e.target.value)}
+                    />
+                  )}
 
                       {showProposals &&
                         proposals.length > 0 && (
@@ -1007,14 +1044,6 @@ export default function CockpitWeek() {
                   })()}
                 </div>
               )}
-              {proposalModal?.slot && (
-                <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-                  {(() => {
-                    const total = slotTotalPeople(week?.slots, proposalModal.slot);
-                    return total ? `Pour ${total} personne(s)` : "";
-                  })()}
-                </div>
-              )}
 
               {proposalLoading && (
                 <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
@@ -1135,14 +1164,6 @@ export default function CockpitWeek() {
                 <div style={{ fontSize: 16, fontWeight: 700 }}>
                   {recipeModalData.title || recipeModalData.recipe_id}
                 </div>
-                {recipeModal?.slot && (
-                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-                    {(() => {
-                      const total = slotTotalPeople(week?.slots, recipeModal.slot);
-                      return total ? `Pour ${total} personne(s)` : "";
-                    })()}
-                  </div>
-                )}
                 {recipeModal?.slot && (
                   <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
                     {(() => {
