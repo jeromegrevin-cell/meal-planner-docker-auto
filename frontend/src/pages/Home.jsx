@@ -161,12 +161,12 @@ export default function Home() {
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(7, 1fr)",
-          gap: 8,
-          marginTop: 16
+          gap: 6,
+          marginTop: 12
         }}
       >
         {WEEKDAYS_FR.map((d) => (
-          <div key={d} style={{ fontWeight: 700, textAlign: "center" }}>
+          <div key={d} style={{ fontWeight: 700, textAlign: "center", fontSize: 12 }}>
             {d}
           </div>
         ))}
@@ -187,21 +187,21 @@ export default function Home() {
             <div
               key={key}
               style={{
-                minHeight: 110,
+                minHeight: 82,
                 border: "1px solid #e5e7eb",
-                borderRadius: 8,
-                padding: 8,
+                borderRadius: 6,
+                padding: 6,
                 background: isCurrentMonth ? "#fff" : "#f9fafb"
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div style={{ fontWeight: 700 }}>{dayLabel}</div>
+                <div style={{ fontWeight: 700, fontSize: 12 }}>{dayLabel}</div>
                 {info?.week_id && (
-                  <div style={{ fontSize: 11, opacity: 0.6 }}>{info.week_id}</div>
+                  <div style={{ fontSize: 10, opacity: 0.6 }}>{info.week_id}</div>
                 )}
               </div>
 
-              <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+              <div style={{ marginTop: 4, display: "grid", gap: 3 }}>
                 {["lunch", "dinner"].map((k) => {
                   const slot = info?.[k]?.slot || null;
                   const data = info?.[k]?.data || null;
@@ -214,9 +214,9 @@ export default function Home() {
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 6,
-                        padding: "4px 6px",
-                        borderRadius: 6,
+                        gap: 4,
+                        padding: "3px 5px",
+                        borderRadius: 5,
                         background: "#f3f4f6",
                         cursor: data ? "pointer" : "default"
                       }}
@@ -227,9 +227,9 @@ export default function Home() {
                     >
                       <div
                         style={{
-                          fontSize: 11,
+                          fontSize: 10,
                           fontWeight: 700,
-                          width: 28,
+                          width: 26,
                           opacity: 0.7
                         }}
                       >
@@ -237,10 +237,9 @@ export default function Home() {
                       </div>
                       <div
                         style={{
-                          fontSize: 12,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
+                          fontSize: 11,
+                          whiteSpace: "normal",
+                          wordBreak: "break-word",
                           flex: 1
                         }}
                       >
