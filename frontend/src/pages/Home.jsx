@@ -92,21 +92,45 @@ export default function Home() {
     if (!slotData) return;
     const recipeId = slotData.recipe_id || null;
     const freeText = slotData.free_text || "";
+    const isValidated =
+      slotData.validated === true ||
+      (slotData.validated == null && !!(slotData.recipe_id || slotData.free_text));
 
     setModalLoading(true);
     setModalError(null);
 
+    if (!isValidated) {
+      setModal({
+        title: "Aucune recette validée",
+        recipe: null,
+        dateLabel: dayLabel,
+        slotLabel
+      });
+      setModalLoading(false);
+      return;
+    }
+
     if (recipeId) {
       const cached = recipeCache[recipeId];
       if (cached) {
-        setModal({ title: cached.title || recipeId, recipe: cached, dateLabel: dayLabel, slotLabel });
+        setModal({
+          title: cached.title || recipeId,
+          recipe: cached,
+          dateLabel: dayLabel,
+          slotLabel
+        });
         setModalLoading(false);
         return;
       }
       try {
         const r = await fetchJson(`/api/recipes/${encodeURIComponent(recipeId)}`);
         setRecipeCache((prev) => ({ ...prev, [recipeId]: r }));
-        setModal({ title: r.title || recipeId, recipe: r, dateLabel: dayLabel, slotLabel });
+        setModal({
+          title: r.title || recipeId,
+          recipe: r,
+          dateLabel: dayLabel,
+          slotLabel
+        });
       } catch (e) {
         setModalError(e.message);
       } finally {
@@ -116,16 +140,34 @@ export default function Home() {
     }
 
     if (freeText) {
-      setModal({
-        title: freeText,
-        recipe: null,
-        dateLabel: dayLabel,
-        slotLabel
-      });
-      setModalLoading(false);
-    } else {
-      setModalLoading(false);
+      try {
+        const j = await fetchJson("/api/chat/preview-title", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: freeText, people: null })
+        });
+        const preview = j.preview || {};
+        setModal({
+          title: freeText,
+          recipe: { title: freeText, content: preview },
+          dateLabel: dayLabel,
+          slotLabel
+        });
+      } catch (e) {
+        setModalError(e.message);
+      } finally {
+        setModalLoading(false);
+      }
+      return;
     }
+
+    setModal({
+      title: "Aucune recette validée",
+      recipe: null,
+      dateLabel: dayLabel,
+      slotLabel
+    });
+    setModalLoading(false);
   }
 
   function closeModal() {
@@ -308,6 +350,11 @@ export default function Home() {
             {!modalLoading && !modalError && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>{modal.title}</div>
+                {!modal.recipe && modal.title === "Aucune recette validée" && (
+                  <div style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
+                    Aucune recette validée pour ce repas.
+                  </div>
+                )}
                 {modal.recipe?.content?.description_courte && (
                   <div style={{ marginTop: 8, fontSize: 13, opacity: 0.9 }}>
                     {modal.recipe.content.description_courte}
