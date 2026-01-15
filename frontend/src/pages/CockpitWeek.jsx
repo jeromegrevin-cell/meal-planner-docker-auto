@@ -890,9 +890,10 @@ export default function CockpitWeek() {
               <div style={{ fontWeight: 800 }}>Contraintes</div>
               <button
                 onClick={() => setConstraintsOpen(false)}
-                style={{ marginLeft: "auto", padding: "6px 10px" }}
+                aria-label="Fermer"
+                style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 16 }}
               >
-                Fermer
+                x
               </button>
             </div>
 
@@ -942,9 +943,10 @@ export default function CockpitWeek() {
               </div>
               <button
                 onClick={closeProposalModal}
-                style={{ marginLeft: "auto", padding: "6px 10px" }}
+                aria-label="Fermer"
+                style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 16 }}
               >
-                Fermer
+                x
               </button>
             </div>
 
@@ -1044,9 +1046,10 @@ export default function CockpitWeek() {
               </div>
               <button
                 onClick={closeRecipeModal}
-                style={{ marginLeft: "auto", padding: "6px 10px" }}
+                aria-label="Fermer"
+                style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 16 }}
               >
-                Fermer
+                x
               </button>
             </div>
 
