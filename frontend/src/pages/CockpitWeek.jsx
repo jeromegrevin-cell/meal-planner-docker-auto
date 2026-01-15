@@ -238,6 +238,8 @@ export default function CockpitWeek() {
 
   const [menuProposals, setMenuProposals] = useState({});
   const [savedProposalIds, setSavedProposalIds] = useState({});
+  const [savedRecipeIdsBySlot, setSavedRecipeIdsBySlot] = useState({});
+  const [uploadedRecipeIdsBySlot, setUploadedRecipeIdsBySlot] = useState({});
 
   const [previewCache, setPreviewCache] = useState({});
 
@@ -511,13 +513,64 @@ export default function CockpitWeek() {
     await loadMenuProposals(week.week_id);
   }
 
-  function onSaveProposal(p) {
-    setSavedProposalIds((x) => ({ ...x, [p.proposal_id]: true }));
+  async function onSaveProposal(slot, p) {
+    const title = String(p?.title || "").trim();
+    if (!title) return;
+
+    const s = week?.slots?.[slot] || {};
+    const people = normalizePeopleFromSlot(s?.people);
+
+    try {
+      const j = await fetchJson("/api/recipes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          week_id: week?.week_id,
+          slot,
+          source: { type: "MENU_PROPOSAL" },
+          people
+        })
+      });
+      if (j?.recipe_id) {
+        setSavedRecipeIdsBySlot((prev) => ({ ...prev, [slot]: j.recipe_id }));
+      }
+      setSavedProposalIds((x) => ({ ...x, [p.proposal_id]: true }));
+    } catch (e) {
+      alert(`Sauvegarder failed: ${e.message}`);
+    }
+  }
+
+  async function onUploadWeek() {
+    const entries = Object.entries(savedRecipeIdsBySlot || {});
+    if (entries.length === 0) {
+      alert("Aucune recette sauvegardée pour cette semaine.");
+      return;
+    }
+    try {
+      for (const [slot, recipe_id] of entries) {
+        if (!recipe_id) continue;
+        await fetchJson("/api/recipes/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipe_id })
+        });
+        setUploadedRecipeIdsBySlot((prev) => ({ ...prev, [slot]: true }));
+      }
+    } catch (e) {
+      alert(`Upload failed: ${e.message}`);
+    }
   }
 
   function validatedLabel(s) {
     if (!s || s.validated !== true) return "";
-    if (s.recipe_id) return recipeTitles[s.recipe_id] || s.recipe_id;
+    if (s.recipe_id) {
+      const rid = s.recipe_id;
+      const title = recipeTitles[rid] || rid;
+      const meta = recipeCache?.[rid];
+      const isDrive = meta?.source?.type === "DRIVE";
+      return isDrive ? `${title} (Drive)` : title;
+    }
     if (s.free_text) return s.free_text;
     return "";
   }
@@ -741,6 +794,10 @@ export default function CockpitWeek() {
         >
           Contraintes
         </button>
+
+        <button onClick={onUploadWeek} disabled={!week?.week_id}>
+          Upload
+        </button>
       </div>
 
       {week?.date_start && week?.date_end && (
@@ -912,7 +969,7 @@ export default function CockpitWeek() {
 
                               <button
                                 style={{ padding: "4px 8px", fontSize: 12 }}
-                                onClick={() => onSaveProposal(p)}
+                                onClick={() => onSaveProposal(slot, p)}
                                 disabled={saved}
                               >
                                 Sauvegarder
