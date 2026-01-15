@@ -461,10 +461,16 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
       }
     }
 
-    // Recalcul validated (important: recipe_id placeholder != validated par défaut)
+    // Recalcul validated only when validation-related fields change.
+    const shouldRecomputeValidated =
+      validatedRaw === true ||
+      validatedRaw === false ||
+      recipeIdRaw !== undefined ||
+      freeTextRaw !== undefined;
+
     if (validatedRaw === true || validatedRaw === false) {
       week.slots[slot].validated = validatedRaw;
-    } else {
+    } else if (shouldRecomputeValidated) {
       week.slots[slot].validated = computeValidated(week.slots[slot]);
     }
 
