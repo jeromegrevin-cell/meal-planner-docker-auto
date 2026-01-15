@@ -390,6 +390,9 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
     const recipeIdRaw = req.body?.recipe_id;
     const freeTextRaw = req.body?.free_text;
     const peopleRaw = req.body?.people;
+    const validatedRaw = req.body?.validated;
+    const previewRaw = req.body?.preview;
+    const previewSigRaw = req.body?.preview_people_signature;
 
     // recipe_id: string | null | undefined
     let recipe_id = undefined;
@@ -442,8 +445,33 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
       week.slots[slot].people = defaultPeople();
     }
 
+    if (previewRaw !== undefined) {
+      if (previewRaw === null) {
+        delete week.slots[slot].preview;
+      } else {
+        week.slots[slot].preview = previewRaw;
+      }
+    }
+
+    if (previewSigRaw !== undefined) {
+      if (previewSigRaw === null) {
+        delete week.slots[slot].preview_people_signature;
+      } else {
+        week.slots[slot].preview_people_signature = String(previewSigRaw);
+      }
+    }
+
     // Recalcul validated (important: recipe_id placeholder != validated par défaut)
-    week.slots[slot].validated = computeValidated(week.slots[slot]);
+    if (validatedRaw === true || validatedRaw === false) {
+      week.slots[slot].validated = validatedRaw;
+    } else {
+      week.slots[slot].validated = computeValidated(week.slots[slot]);
+    }
+
+    if (validatedRaw === false) {
+      delete week.slots[slot].preview;
+      delete week.slots[slot].preview_people_signature;
+    }
 
     week.updated_at = nowIso();
     await writeJson(p, week);

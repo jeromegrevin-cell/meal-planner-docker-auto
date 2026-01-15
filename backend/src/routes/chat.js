@@ -446,6 +446,55 @@ router.post("/proposals/preview", async (req, res) => {
 });
 
 /**
+ * POST /api/chat/preview-title
+ * body: { title, people }
+ * Returns preview without storing.
+ */
+router.post("/preview-title", async (req, res) => {
+  const title = String(req.body?.title || "");
+  const people = req.body?.people || null;
+
+  if (!title) return res.status(400).json({ error: "missing_title" });
+
+  try {
+    const openai = getOpenAIClient();
+    if (!openai) {
+      return res.status(500).json({ error: "openai_not_configured" });
+    }
+
+    const model = getModel();
+    const peopleLine = people
+      ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
+      : "";
+
+    const prompt = [
+      `Génère une fiche courte de recette pour : "${title}".`,
+      peopleLine,
+      "Réponds STRICTEMENT en JSON avec ces clés:",
+      '{"description_courte":"...", "ingredients":[{"item":"...","qty":"...","unit":"..."}], "preparation_steps":["...","..."]}',
+      "IMPORTANT: preparation_steps doit contenir au moins 3 étapes."
+    ].join("\n");
+
+    const resp = await openai.responses.create({
+      model,
+      input: prompt
+    });
+
+    const raw = resp.output_text || "";
+    let preview = null;
+    try {
+      preview = JSON.parse(raw);
+    } catch (_e) {
+      return res.status(500).json({ error: "preview_parse_failed", raw_text: raw });
+    }
+
+    return res.json({ ok: true, preview });
+  } catch (e) {
+    return res.status(500).json({ error: "preview_failed", details: e.message });
+  }
+});
+
+/**
  * GET /api/chat/usage?week_id=2026-W02
  */
 router.get("/usage", async (req, res) => {
