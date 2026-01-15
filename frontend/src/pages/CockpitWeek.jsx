@@ -38,6 +38,10 @@ const FREE_TEXT_ALLOWED_SLOTS = new Set([
   "fri_lunch"
 ]);
 
+const PROPOSAL_SLOTS = ALL_SLOTS.filter(
+  (slot) => !FREE_TEXT_ALLOWED_SLOTS.has(slot)
+);
+
 function getSlotLabel(slotKey) {
   return SLOT_LABELS_FR[slotKey] || slotKey;
 }
@@ -182,6 +186,23 @@ export default function CockpitWeek() {
     }
   }
 
+  async function generateProposals(weekId) {
+    try {
+      await fetchJson("/api/chat/proposals/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          week_id: weekId,
+          slots: PROPOSAL_SLOTS,
+          overwrite: true
+        })
+      });
+      await loadMenuProposals(weekId);
+    } catch (e) {
+      alert(`Propositions non generees: ${e.message}`);
+    }
+  }
+
   // --------------------
   // Init
   // --------------------
@@ -242,6 +263,7 @@ export default function CockpitWeek() {
 
     await loadWeeksList();
     await onChangeWeek(prepWeekId);
+    await generateProposals(prepWeekId);
 
     setPrepWeekId("");
     setPrepStart("");
@@ -334,6 +356,12 @@ export default function CockpitWeek() {
         />
 
         <button onClick={onPrepareWeek}>Préparer</button>
+        <button
+          onClick={() => generateProposals(week?.week_id)}
+          disabled={!week?.week_id}
+        >
+          Proposer menus
+        </button>
         <button
           onClick={() =>
             loadConstraints(week.week_id).then(() => setConstraintsOpen(true))
