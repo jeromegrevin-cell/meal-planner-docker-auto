@@ -378,7 +378,7 @@ export default function CockpitWeek() {
         </div>
       )}
 
-      <table style={{ width: "100%", marginTop: 16 }}>
+      <table style={{ width: "100%", marginTop: 16, borderCollapse: "collapse" }}>
         <tbody>
           {tableRows.map(([slot, s]) => {
             const isSelected = selectedSlot === slot;
@@ -393,20 +393,29 @@ export default function CockpitWeek() {
               <tr
                 key={slot}
                 onClick={() => setSelectedSlot(slot)}
-                style={{ background: isSelected ? "#eef2ff" : "" }}
+                style={{
+                  background: isSelected ? "#eef2ff" : "",
+                  borderBottom: "1px solid #eee"
+                }}
               >
-                <td style={{ width: 220, verticalAlign: "top", padding: "8px 6px" }}>
+                <td style={{ width: 220, verticalAlign: "top", padding: "10px 8px" }}>
                   {getSlotLabel(slot)}
                 </td>
 
-                <td style={{ verticalAlign: "top", padding: "8px 6px" }}>
+                <td style={{ verticalAlign: "top", padding: "10px 8px" }}>
                   {isValidated ? (
-                    <strong>{validatedLabel(s)}</strong>
+                    <div style={{ fontWeight: 700 }}>{validatedLabel(s)}</div>
                   ) : (
                     <>
                       {canFreeText && (
                         <textarea
-                          style={{ display: "block", width: "100%", marginTop: 6 }}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            marginTop: 6,
+                            padding: 6,
+                            fontSize: 12
+                          }}
                           rows={2}
                           value={freeTextBySlot[slot] || ""}
                           onClick={(e) => e.stopPropagation()}
@@ -420,6 +429,12 @@ export default function CockpitWeek() {
                       )}
 
                       {showProposals &&
+                        proposals.length > 0 && (
+                          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+                            Propositions
+                          </div>
+                        )}
+                      {showProposals &&
                         proposals.map((p) => {
                           const saved = !!savedProposalIds[p.proposal_id];
                           return (
@@ -429,21 +444,39 @@ export default function CockpitWeek() {
                                 display: "flex",
                                 gap: 8,
                                 marginTop: 6,
-                                alignItems: "center"
+                                alignItems: "center",
+                                padding: "6px 8px",
+                                border: "1px solid #eee",
+                                borderRadius: 6,
+                                background: "#fafafa"
                               }}
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <span style={{ flex: 1 }}>{p.title}</span>
+                              <span style={{ flex: 1 }}>
+                                {p.title}
+                                {saved ? (
+                                  <span style={{ marginLeft: 8, opacity: 0.7 }}>
+                                    (Sauvegardée)
+                                  </span>
+                                ) : null}
+                              </span>
 
-                              <button onClick={() => onValidateProposal(slot, p)}>
+                              <button
+                                style={{ padding: "4px 8px", fontSize: 12 }}
+                                onClick={() => onValidateProposal(slot, p)}
+                              >
                                 Valider
                               </button>
 
-                              <button onClick={() => onOtherProposal(slot)}>
+                              <button
+                                style={{ padding: "4px 8px", fontSize: 12 }}
+                                onClick={() => onOtherProposal(slot)}
+                              >
                                 Autre
                               </button>
 
                               <button
+                                style={{ padding: "4px 8px", fontSize: 12 }}
                                 onClick={() => onSaveProposal(p)}
                                 disabled={saved}
                               >
