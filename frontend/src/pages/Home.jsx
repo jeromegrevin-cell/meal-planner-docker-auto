@@ -107,13 +107,14 @@ export default function Home() {
     setModalError(null);
 
     if (!isValidated) {
-        setModal({
-          title: "Aucune recette validée",
-          recipe: null,
-          dateLabel: dayLabel,
-          slotLabel,
-          people: slotData.people || null
-        });
+      setModal({
+        title: "Aucune recette validée",
+        recipe: null,
+        dateLabel: dayLabel,
+        slotLabel,
+        people: slotData.people || null,
+        isValidated: false
+      });
       setModalLoading(false);
       return;
     }
@@ -126,7 +127,8 @@ export default function Home() {
           recipe: cached,
           dateLabel: dayLabel,
           slotLabel,
-          people: slotData.people || null
+          people: slotData.people || null,
+          isValidated: true
         });
         setModalLoading(false);
         return;
@@ -139,7 +141,8 @@ export default function Home() {
           recipe: r,
           dateLabel: dayLabel,
           slotLabel,
-          people: slotData.people || null
+          people: slotData.people || null,
+          isValidated: true
         });
       } catch (e) {
         setModalError(e.message);
@@ -162,7 +165,8 @@ export default function Home() {
           recipe: { title: freeText, content: preview },
           dateLabel: dayLabel,
           slotLabel,
-          people: slotData.people || null
+          people: slotData.people || null,
+          isValidated: true
         });
       } catch (e) {
         setModalError(e.message);
@@ -177,7 +181,8 @@ export default function Home() {
       recipe: null,
       dateLabel: dayLabel,
       slotLabel,
-      people: slotData.people || null
+      people: slotData.people || null,
+      isValidated: false
     });
     setModalLoading(false);
   }
@@ -370,7 +375,7 @@ export default function Home() {
                     </div>
                   ) : null;
                 })()}
-                {!modal.recipe && modal.title === "Aucune recette validée" && (
+                {modal?.isValidated === false && (
                   <div style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
                     Aucune recette validée pour ce repas.
                   </div>

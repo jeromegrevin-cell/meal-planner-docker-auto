@@ -421,6 +421,18 @@ export default function CockpitWeek() {
 
     const w = await loadWeek(week.week_id);
     setWeek(w);
+
+    if (proposalModal?.slot === slot && proposalModal?.proposal) {
+      const people = normalizePeopleFromSlot(w?.slots?.[slot]?.people);
+      await loadProposalPreview(slot, proposalModal.proposal, people);
+    }
+
+    if (recipeModal?.slot === slot) {
+      const slotData = w?.slots?.[slot] || {};
+      if (slotData.free_text && !slotData.recipe_id) {
+        await openRecipeModal(slot, w);
+      }
+    }
   }
 
   async function onValidateProposal(slot, proposal) {
@@ -540,12 +552,12 @@ export default function CockpitWeek() {
     }
   }
 
-  async function loadProposalPreview(slot, proposal) {
+  async function loadProposalPreview(slot, proposal, peopleOverride = null) {
     if (!week?.week_id || !proposal?.proposal_id || !proposal?.title) return;
     setProposalLoading(true);
     setProposalError(null);
     try {
-      const slotPeople = normalizePeopleFromSlot(week?.slots?.[slot]?.people);
+      const slotPeople = peopleOverride || normalizePeopleFromSlot(week?.slots?.[slot]?.people);
       const j = await fetchJson("/api/chat/proposals/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -572,13 +584,13 @@ export default function CockpitWeek() {
     setProposalLoading(false);
   }
 
-  async function openRecipeModal(slot) {
+  async function openRecipeModal(slot, weekOverride = null) {
     setRecipeModal({ slot });
     setRecipeModalData(null);
     setRecipeModalError(null);
     setRecipeModalLoading(true);
 
-    const slotData = week?.slots?.[slot] || {};
+    const slotData = weekOverride?.slots?.[slot] || week?.slots?.[slot] || {};
     const rid = slotData.recipe_id || null;
     const freeText = slotData.free_text || null;
     const slotPeople = normalizePeopleFromSlot(slotData.people);
@@ -995,6 +1007,14 @@ export default function CockpitWeek() {
                   })()}
                 </div>
               )}
+              {proposalModal?.slot && (
+                <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+                  {(() => {
+                    const total = slotTotalPeople(week?.slots, proposalModal.slot);
+                    return total ? `Pour ${total} personne(s)` : "";
+                  })()}
+                </div>
+              )}
 
               {proposalLoading && (
                 <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
@@ -1115,6 +1135,14 @@ export default function CockpitWeek() {
                 <div style={{ fontSize: 16, fontWeight: 700 }}>
                   {recipeModalData.title || recipeModalData.recipe_id}
                 </div>
+                {recipeModal?.slot && (
+                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+                    {(() => {
+                      const total = slotTotalPeople(week?.slots, recipeModal.slot);
+                      return total ? `Pour ${total} personne(s)` : "";
+                    })()}
+                  </div>
+                )}
                 {recipeModal?.slot && (
                   <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
                     {(() => {
