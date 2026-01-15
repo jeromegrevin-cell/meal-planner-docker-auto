@@ -36,6 +36,13 @@ function slotPrefixFromDate(d) {
   return map[d.getDay()];
 }
 
+function totalPeopleFromSlot(slotData) {
+  if (!slotData?.people) return 0;
+  const adults = Number.isFinite(slotData.people.adults) ? slotData.people.adults : 0;
+  const children = Number.isFinite(slotData.people.children) ? slotData.people.children : 0;
+  return adults + children;
+}
+
 export default function Home() {
   const [currentMonth, setCurrentMonth] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1)
@@ -100,12 +107,13 @@ export default function Home() {
     setModalError(null);
 
     if (!isValidated) {
-      setModal({
-        title: "Aucune recette validée",
-        recipe: null,
-        dateLabel: dayLabel,
-        slotLabel
-      });
+        setModal({
+          title: "Aucune recette validée",
+          recipe: null,
+          dateLabel: dayLabel,
+          slotLabel,
+          people: slotData.people || null
+        });
       setModalLoading(false);
       return;
     }
@@ -117,7 +125,8 @@ export default function Home() {
           title: cached.title || recipeId,
           recipe: cached,
           dateLabel: dayLabel,
-          slotLabel
+          slotLabel,
+          people: slotData.people || null
         });
         setModalLoading(false);
         return;
@@ -129,7 +138,8 @@ export default function Home() {
           title: r.title || recipeId,
           recipe: r,
           dateLabel: dayLabel,
-          slotLabel
+          slotLabel,
+          people: slotData.people || null
         });
       } catch (e) {
         setModalError(e.message);
@@ -144,14 +154,15 @@ export default function Home() {
         const j = await fetchJson("/api/chat/preview-title", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: freeText, people: null })
+          body: JSON.stringify({ title: freeText, people: slotData.people || null })
         });
         const preview = j.preview || {};
         setModal({
           title: freeText,
           recipe: { title: freeText, content: preview },
           dateLabel: dayLabel,
-          slotLabel
+          slotLabel,
+          people: slotData.people || null
         });
       } catch (e) {
         setModalError(e.message);
@@ -165,7 +176,8 @@ export default function Home() {
       title: "Aucune recette validée",
       recipe: null,
       dateLabel: dayLabel,
-      slotLabel
+      slotLabel,
+      people: slotData.people || null
     });
     setModalLoading(false);
   }
@@ -350,6 +362,14 @@ export default function Home() {
             {!modalLoading && !modalError && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>{modal.title}</div>
+                {(() => {
+                  const total = totalPeopleFromSlot({ people: modal?.people || null });
+                  return total ? (
+                    <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+                      Pour {total} personne(s)
+                    </div>
+                  ) : null;
+                })()}
                 {!modal.recipe && modal.title === "Aucune recette validée" && (
                   <div style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
                     Aucune recette validée pour ce repas.

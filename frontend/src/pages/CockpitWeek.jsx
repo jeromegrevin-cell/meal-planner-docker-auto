@@ -183,6 +183,18 @@ function normalizePeopleFromSlot(slotPeople) {
   return { adults, children, child_birth_months };
 }
 
+function peopleTotal(people) {
+  const adults = Number.isFinite(people?.adults) ? people.adults : 0;
+  const children = Number.isFinite(people?.children) ? people.children : 0;
+  return adults + children;
+}
+
+function slotTotalPeople(weekSlots, slot) {
+  if (!slot) return 0;
+  const people = normalizePeopleFromSlot(weekSlots?.[slot]?.people);
+  return peopleTotal(people);
+}
+
 function buildPeopleSignature(people) {
   const adults = Number(people?.adults || 0);
   const children = Number(people?.children || 0);
@@ -702,6 +714,7 @@ export default function CockpitWeek() {
 
             const proposals = menuProposals?.[slot] || [];
             const people = normalizePeopleFromSlot(s?.people);
+            const totalPeople = peopleTotal(people);
 
             return (
               <tr
@@ -716,7 +729,7 @@ export default function CockpitWeek() {
                   {getSlotLabel(slot)}
 
                   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-                    {people.adults}A / {people.children}E
+                    {totalPeople} pers.
                   </div>
 
                   <div
@@ -754,7 +767,9 @@ export default function CockpitWeek() {
                 <td style={{ verticalAlign: "top", padding: "10px 8px" }}>
                   {isValidated ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ fontWeight: 700 }}>{validatedLabel(s)}</div>
+                      <div style={{ fontWeight: 700 }}>
+                        {validatedLabel(s)} {totalPeople ? `· ${totalPeople} pers.` : ""}
+                      </div>
                       <button
                         style={{ padding: "4px 8px", fontSize: 12 }}
                         onClick={(e) => {
@@ -821,7 +836,9 @@ export default function CockpitWeek() {
                               }}
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <span style={{ flex: 1 }}>{p.title}</span>
+                              <span style={{ flex: 1 }}>
+                                {p.title} {totalPeople ? `· ${totalPeople} pers.` : ""}
+                              </span>
 
                               <button
                                 style={{ padding: "4px 8px", fontSize: 12 }}
@@ -970,6 +987,14 @@ export default function CockpitWeek() {
               <div style={{ fontSize: 16, fontWeight: 700 }}>
                 {proposalModal.proposal?.title || ""}
               </div>
+              {proposalModal?.slot && (
+                <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+                  {(() => {
+                    const total = slotTotalPeople(week?.slots, proposalModal.slot);
+                    return total ? `Pour ${total} personne(s)` : "";
+                  })()}
+                </div>
+              )}
 
               {proposalLoading && (
                 <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
@@ -1090,6 +1115,14 @@ export default function CockpitWeek() {
                 <div style={{ fontSize: 16, fontWeight: 700 }}>
                   {recipeModalData.title || recipeModalData.recipe_id}
                 </div>
+                {recipeModal?.slot && (
+                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+                    {(() => {
+                      const total = slotTotalPeople(week?.slots, recipeModal.slot);
+                      return total ? `Pour ${total} personne(s)` : "";
+                    })()}
+                  </div>
+                )}
                 {recipeModalData?.content?.description_courte && (
                   <div style={{ fontSize: 13, opacity: 0.9 }}>
                     {recipeModalData.content.description_courte}
