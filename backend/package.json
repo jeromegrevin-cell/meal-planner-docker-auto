@@ -6,6 +6,7 @@
   "scripts": {
     "check:data": "node scripts/check-json.js",
     "check:data:fix": "node scripts/check-json.js --fix",
+    "check:duplicates": "python3 ../scripts/find_recipe_duplicates.py",
 
     "prestart": "node scripts/check-json.js",
     "start": "node src/index.js",

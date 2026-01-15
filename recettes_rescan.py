@@ -100,6 +100,24 @@ ENV_FOLDER_ID = os.environ.get("RECETTES_FOLDER_ID", "").strip()
 def deaccent(s: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
 
+def normalize_title(s: str) -> str:
+    # Lowercase + remove accents + keep alphanumerics/spaces.
+    s = deaccent(s or "").lower()
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    return re.sub(r"\s+", " ", s)
+
+_TITLE_STOP_WORDS = {
+    "de", "du", "des", "la", "le", "les", "au", "aux", "a", "et", "en",
+    "d", "l", "un", "une", "aux", "avec", "sans"
+}
+
+def title_key(s: str) -> str:
+    base = normalize_title(s)
+    if not base:
+        return ""
+    tokens = [t for t in base.split(" ") if t and t not in _TITLE_STOP_WORDS]
+    tokens.sort()
+    return " ".join(tokens)
 
 def with_retries(fn, *args, **kwargs):
     for attempt in range(5):
@@ -539,6 +557,8 @@ def main():
 
             entry = {
                 "title": name,
+                "normalized_title": normalize_title(name),
+                "title_key": title_key(name),
                 "file_id": fid,
                 "mimeType": mt,
                 "webViewLink": web,
@@ -609,4 +629,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
