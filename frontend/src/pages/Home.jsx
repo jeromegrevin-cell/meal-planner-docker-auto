@@ -52,6 +52,11 @@ export default function Home() {
   const [modal, setModal] = useState(null); // { title, recipe, dateLabel }
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState(null);
+  const [calendarMaxHeight, setCalendarMaxHeight] = useState(() => {
+    if (typeof window === "undefined") return 440;
+    const h = Math.round(window.innerHeight * 0.6);
+    return Math.max(360, Math.min(560, h));
+  });
 
   useEffect(() => {
     async function loadWeeks() {
@@ -67,6 +72,15 @@ export default function Home() {
     }
 
     loadWeeks().catch(() => setWeeks({}));
+  }, []);
+
+  useEffect(() => {
+    function onResize() {
+      const h = Math.round(window.innerHeight * 0.6);
+      setCalendarMaxHeight(Math.max(360, Math.min(560, h)));
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   const days = useMemo(() => {
@@ -230,54 +244,64 @@ export default function Home() {
 
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(7, 1fr)",
-          gap: 6,
-          marginTop: 12
+          marginTop: 12,
+          maxHeight: calendarMaxHeight,
+          overflowY: "auto",
+          paddingRight: 4
         }}
       >
-        {WEEKDAYS_FR.map((d) => (
-          <div key={d} style={{ fontWeight: 700, textAlign: "center", fontSize: 12 }}>
-            {d}
-          </div>
-        ))}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(7, 1fr)",
+            gap: 6
+          }}
+        >
+          {WEEKDAYS_FR.map((d) => (
+            <div key={d} style={{ fontWeight: 700, textAlign: "center", fontSize: 12 }}>
+              {d}
+            </div>
+          ))}
 
-        {days.map((d) => {
-          const key = dateKey(d);
-          const info = dayMap[key] || null;
-          const isCurrentMonth = d.getMonth() === currentMonth.getMonth();
-          const dayLabel = d.getDate();
-          const dayFull = new Intl.DateTimeFormat("fr-FR", {
-            weekday: "long",
-            day: "2-digit",
-            month: "long",
-            year: "numeric"
-          }).format(d);
+          {days.map((d) => {
+            const key = dateKey(d);
+            const info = dayMap[key] || null;
+            const isCurrentMonth = d.getMonth() === currentMonth.getMonth();
+            const today = new Date();
+            const isToday = dateKey(d) === dateKey(today);
+            const dayLabel = d.getDate();
+            const dayFull = new Intl.DateTimeFormat("fr-FR", {
+              weekday: "long",
+              day: "2-digit",
+              month: "long",
+              year: "numeric"
+            }).format(d);
 
-          return (
-            <div
-              key={key}
-              style={{
-                minHeight: 82,
-                border: "1px solid #e5e7eb",
-                borderRadius: 6,
-                padding: 6,
-                background: isCurrentMonth ? "#fff" : "#f9fafb"
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div style={{ fontWeight: 700, fontSize: 12 }}>{dayLabel}</div>
-                {info?.week_id && (
-                  <div style={{ fontSize: 10, opacity: 0.6 }}>{info.week_id}</div>
-                )}
-              </div>
+            return (
+              <div
+                key={key}
+                style={{
+                  height: 86,
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 6,
+                  padding: 6,
+                  background: isToday ? "#dceeff" : isCurrentMonth ? "#fff" : "#f9fafb",
+                  overflow: "hidden"
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div style={{ fontWeight: 700, fontSize: 12 }}>{dayLabel}</div>
+                  {info?.week_id && (
+                    <div style={{ fontSize: 10, opacity: 0.6 }}>{info.week_id}</div>
+                  )}
+                </div>
 
-              <div style={{ marginTop: 4, display: "grid", gap: 3 }}>
-                {["lunch", "dinner"].map((k) => {
-                  const slot = info?.[k]?.slot || null;
-                  const data = info?.[k]?.data || null;
-                  const label = SLOT_LABELS[k];
-                  const title = data?.free_text || data?.recipe_id || "";
+                <div style={{ marginTop: 4, display: "grid", gap: 3 }}>
+                  {["lunch", "dinner"].map((k) => {
+                    const slot = info?.[k]?.slot || null;
+                    const data = info?.[k]?.data || null;
+                    const label = SLOT_LABELS[k];
+                    const title = data?.free_text || data?.recipe_id || "";
 
                   return (
                     <div
@@ -319,10 +343,11 @@ export default function Home() {
                     </div>
                   );
                 })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {modal && (
