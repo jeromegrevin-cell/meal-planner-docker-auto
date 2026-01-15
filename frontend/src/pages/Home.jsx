@@ -95,13 +95,25 @@ export default function Home() {
     return map;
   }, [weeks]);
 
-  async function openRecipeModal(dayLabel, slotLabel, slotData) {
+  async function openRecipeModal(dayLabel, slotLabel, slotData, weekId, slotKey) {
     if (!slotData) return;
-    const recipeId = slotData.recipe_id || null;
-    const freeText = slotData.free_text || "";
+    let latestSlotData = slotData;
+    if (weekId && slotKey) {
+      try {
+        const w = await fetchJson(`/api/weeks/${encodeURIComponent(weekId)}`);
+        setWeeks((prev) => ({ ...prev, [weekId]: w }));
+        latestSlotData = w.slots?.[slotKey] || slotData;
+      } catch {
+        latestSlotData = slotData;
+      }
+    }
+
+    const recipeId = latestSlotData.recipe_id || null;
+    const freeText = latestSlotData.free_text || "";
     const isValidated =
-      slotData.validated === true ||
-      (slotData.validated == null && !!(slotData.recipe_id || slotData.free_text));
+      latestSlotData.validated === true ||
+      (latestSlotData.validated == null &&
+        !!(latestSlotData.recipe_id || latestSlotData.free_text));
 
     setModalLoading(true);
     setModalError(null);
@@ -112,7 +124,7 @@ export default function Home() {
         recipe: null,
         dateLabel: dayLabel,
         slotLabel,
-        people: slotData.people || null,
+        people: latestSlotData.people || null,
         isValidated: false
       });
       setModalLoading(false);
@@ -127,7 +139,7 @@ export default function Home() {
           recipe: cached,
           dateLabel: dayLabel,
           slotLabel,
-          people: slotData.people || null,
+          people: latestSlotData.people || null,
           isValidated: true
         });
         setModalLoading(false);
@@ -141,7 +153,7 @@ export default function Home() {
           recipe: r,
           dateLabel: dayLabel,
           slotLabel,
-          people: slotData.people || null,
+          people: latestSlotData.people || null,
           isValidated: true
         });
       } catch (e) {
@@ -157,7 +169,7 @@ export default function Home() {
         const j = await fetchJson("/api/chat/preview-title", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: freeText, people: slotData.people || null })
+          body: JSON.stringify({ title: freeText, people: latestSlotData.people || null })
         });
         const preview = j.preview || {};
         setModal({
@@ -165,7 +177,7 @@ export default function Home() {
           recipe: { title: freeText, content: preview },
           dateLabel: dayLabel,
           slotLabel,
-          people: slotData.people || null,
+          people: latestSlotData.people || null,
           isValidated: true
         });
       } catch (e) {
@@ -181,7 +193,7 @@ export default function Home() {
       recipe: null,
       dateLabel: dayLabel,
       slotLabel,
-      people: slotData.people || null,
+      people: latestSlotData.people || null,
       isValidated: false
     });
     setModalLoading(false);
