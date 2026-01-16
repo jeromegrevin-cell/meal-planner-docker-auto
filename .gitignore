@@ -35,6 +35,7 @@ logs/
 # Secrets
 # --------------------
 .env
+frontend/.env.local
 credentials/
 
 # --------------------
