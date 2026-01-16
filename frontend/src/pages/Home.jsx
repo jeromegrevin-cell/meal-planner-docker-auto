@@ -221,6 +221,14 @@ export default function Home() {
     setModalLoading(false);
   }
 
+  async function onRescanDrive() {
+    try {
+      await fetchJson("/api/drive/rescan", { method: "POST" });
+    } catch (e) {
+      alert(`Rescan Drive failed: ${e.message}`);
+    }
+  }
+
   const monthLabel = new Intl.DateTimeFormat("fr-FR", {
     month: "long",
     year: "numeric"
@@ -243,6 +251,7 @@ export default function Home() {
         />
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button onClick={onRescanDrive}>Rescan recettes</button>
           <button onClick={() => navigate("/weeks")}>Générer semaine</button>
         </div>
       </div>
