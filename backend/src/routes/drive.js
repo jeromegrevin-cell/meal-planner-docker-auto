@@ -12,6 +12,11 @@ const LOGS_DIR = path.join(JOBS_DIR, "logs");
 
 // On evite les rescans concurrents en memoire (suffisant en dev host)
 let runningJobId = null;
+let lastRescanAtMs = 0;
+
+const MIN_RESCAN_INTERVAL_MS = Number(
+  process.env.DRIVE_RESCAN_MIN_INTERVAL_MS || 60_000
+);
 
 function nowIso() {
   return new Date().toISOString();
@@ -158,6 +163,17 @@ router.post("/rescan", async (_req, res) => {
   try {
     await ensureDirs();
 
+    const now = Date.now();
+    if (now - lastRescanAtMs < MIN_RESCAN_INTERVAL_MS) {
+      return res.status(429).json({
+        ok: false,
+        error: "rescan_rate_limited",
+        details: `Wait ${Math.ceil(
+          (MIN_RESCAN_INTERVAL_MS - (now - lastRescanAtMs)) / 1000
+        )}s before next rescan`
+      });
+    }
+
     // Interdire rescan concurrent
     if (runningJobId) {
       const current = await safeReadJson(jobPath(runningJobId));
@@ -203,6 +219,7 @@ router.post("/rescan", async (_req, res) => {
 
     // Lancement async
     runningJobId = jobId;
+    lastRescanAtMs = now;
 
     job.status = "running";
     job.started_at = nowIso();
