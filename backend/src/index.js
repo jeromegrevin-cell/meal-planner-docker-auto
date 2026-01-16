@@ -77,6 +77,9 @@ const protectAllApi =
 // --------------------
 const pdfsPublic = (process.env.MEAL_PLANNER_PDFS_PUBLIC || "").trim() === "1";
 if (pdfsPublic) {
+  console.warn("[backend] WARNING: /pdfs is public (MEAL_PLANNER_PDFS_PUBLIC=1)");
+}
+if (pdfsPublic) {
   app.use("/pdfs", express.static(path.join(__dirname, "../pdfs")));
 } else {
   app.use("/pdfs", requireApiKey, express.static(path.join(__dirname, "../pdfs")));
