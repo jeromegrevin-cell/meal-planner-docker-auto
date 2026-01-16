@@ -308,9 +308,26 @@ router.post("/proposals/generate", async (req, res) => {
 
     const model = getModel();
 
+    const previousTitlesBySlot = {};
+    for (const slot of slots) {
+      const list = data.menu_proposals?.[slot] || [];
+      previousTitlesBySlot[slot] = list
+        .map((p) => String(p?.title || "").trim())
+        .filter(Boolean);
+    }
+
+    const avoidLines = slots
+      .map((s) => {
+        const titles = previousTitlesBySlot[s] || [];
+        if (titles.length === 0) return null;
+        return `Ne propose pas pour ${s}: ${titles.join(" | ")}`;
+      })
+      .filter(Boolean);
+
     const prompt = [
       "Donne un menu hebdomadaire au format strict suivant (une ligne par slot):",
       ...slots.map((s) => `- ${s}: <titre>`),
+      ...avoidLines,
       "Aucun texte en plus."
     ].join("\n");
 
