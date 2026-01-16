@@ -46,21 +46,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --------------------
-// API auth (optional)
+// API auth
 // --------------------
+const isProd = (process.env.NODE_ENV || "").trim() === "production";
+const apiKey = (process.env.MEAL_PLANNER_API_KEY || "").trim();
+
+if (isProd && !apiKey) {
+  throw new Error(
+    "MEAL_PLANNER_API_KEY is required in production (refusing to start)"
+  );
+}
+
 function requireApiKey(req, res, next) {
-  const expected = (process.env.MEAL_PLANNER_API_KEY || "").trim();
-  if (!expected) return next(); // auth disabled
+  if (!apiKey) return next(); // auth disabled in dev unless key is set
 
   const header =
     req.headers["x-api-key"] ||
     (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
 
-  if (header && header === expected) return next();
+  if (header && header === apiKey) return next();
   return res.status(401).json({ error: "unauthorized" });
 }
 
 const protectAllApi =
+  isProd ||
   (process.env.MEAL_PLANNER_API_PROTECT_ALL || "").trim() === "1";
 
 // --------------------
