@@ -8,10 +8,10 @@
     "check:data:fix": "node scripts/check-json.js --fix",
     "check:duplicates": "python3 ../scripts/find_recipe_duplicates.py",
 
-    "prestart": "node scripts/check-json.js",
+    "prestart": "node scripts/check-json.js && node scripts/check-env.js",
     "start": "node src/index.js",
 
-    "predev": "node scripts/check-json.js",
+    "predev": "node scripts/check-json.js && node scripts/check-env.js",
     "dev": "nodemon --legacy-watch src/index.js"
   },
   "dependencies": {
