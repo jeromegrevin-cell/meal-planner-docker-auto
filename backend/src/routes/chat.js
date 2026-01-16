@@ -8,6 +8,7 @@ const router = express.Router();
 
 const CHAT_DIR = path.join(process.cwd(), "data", "chat_sessions");
 const CHAT_PERSIST = process.env.CHAT_PERSIST !== "0";
+const CHAT_RETENTION_DAYS = Number(process.env.CHAT_RETENTION_DAYS || 0);
 
 // ---------- OpenAI lazy client ----------
 let cachedClient = null;
@@ -35,6 +36,38 @@ function nowIso() {
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
+}
+
+async function pruneChatSessions() {
+  if (!CHAT_PERSIST || !CHAT_RETENTION_DAYS || CHAT_RETENTION_DAYS < 1) return;
+
+  await ensureDir(CHAT_DIR);
+  const cutoff = Date.now() - CHAT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+  const files = await fs.readdir(CHAT_DIR);
+  await Promise.all(
+    files
+      .filter((f) => f.endsWith(".json"))
+      .map(async (f) => {
+        const p = path.join(CHAT_DIR, f);
+        try {
+          const st = await fs.stat(p);
+          if (st.mtimeMs < cutoff) {
+            await fs.unlink(p);
+          }
+        } catch {
+          // Ignore per-file errors (best-effort cleanup)
+        }
+      })
+  );
+}
+
+if (CHAT_PERSIST && CHAT_RETENTION_DAYS > 0) {
+  // Best-effort cleanup at startup + daily
+  pruneChatSessions().catch(() => {});
+  setInterval(() => {
+    pruneChatSessions().catch(() => {});
+  }, 24 * 60 * 60 * 1000);
 }
 
 function chatPath(weekId) {
