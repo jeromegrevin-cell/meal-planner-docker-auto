@@ -252,6 +252,8 @@ export default function CockpitWeek() {
   const [menuProposals, setMenuProposals] = useState({});
   const [savedRecipeIdsBySlot, setSavedRecipeIdsBySlot] = useState({});
   const [uploadedRecipeIdsBySlot, setUploadedRecipeIdsBySlot] = useState({});
+  const [proposalLoadingBySlot, setProposalLoadingBySlot] = useState({});
+  const [proposalErrorBySlot, setProposalErrorBySlot] = useState({});
 
   const [previewCache, setPreviewCache] = useState({});
   const [prefetchStatus, setPrefetchStatus] = useState({});
@@ -552,19 +554,33 @@ export default function CockpitWeek() {
   }
 
   async function onOtherProposal(slot) {
-    const s = week?.slots?.[slot] || {};
-    const people = normalizePeopleFromSlot(s?.people);
-    const childAges = getChildAges(people.child_birth_months);
-    await fetchJson("/api/chat/current", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        week_id: week.week_id,
-        message: buildOtherProposalPrompt(slot, people, childAges),
-        context: { slot }
-      })
-    });
-    await loadMenuProposals(week.week_id);
+    if (!week?.week_id) return;
+    setProposalErrorBySlot((prev) => ({ ...prev, [slot]: null }));
+    setProposalLoadingBySlot((prev) => ({ ...prev, [slot]: true }));
+    try {
+      const j = await fetchJson("/api/chat/proposals/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          week_id: week.week_id,
+          slots: [slot],
+          overwrite: true
+        })
+      });
+      const next = j?.menu_proposals?.[slot];
+      if (Array.isArray(next)) {
+        setMenuProposals((prev) => ({ ...prev, [slot]: next }));
+      } else {
+        await loadMenuProposals(week.week_id);
+      }
+    } catch (e) {
+      setProposalErrorBySlot((prev) => ({
+        ...prev,
+        [slot]: e.message || String(e)
+      }));
+    } finally {
+      setProposalLoadingBySlot((prev) => ({ ...prev, [slot]: false }));
+    }
   }
 
   async function onSaveValidatedSlot(slot) {
@@ -996,6 +1012,8 @@ export default function CockpitWeek() {
             const showProposals = !isValidated;
 
             const proposals = menuProposals?.[slot] || [];
+            const proposalLoading = !!proposalLoadingBySlot?.[slot];
+            const proposalError = proposalErrorBySlot?.[slot];
             const people = normalizePeopleFromSlot(s?.people);
             const totalPeople = peopleTotal(people);
 
@@ -1146,6 +1164,16 @@ export default function CockpitWeek() {
                             Propositions
                           </div>
                         )}
+                      {showProposals && proposalLoading && (
+                        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                          Génération en cours…
+                        </div>
+                      )}
+                      {showProposals && proposalError && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: "#a00" }}>
+                          Erreur: {proposalError}
+                        </div>
+                      )}
                       {showProposals &&
                         proposals.map((p) => {
                           return (
@@ -1170,20 +1198,33 @@ export default function CockpitWeek() {
                               <IconButton
                                 icon="✅"
                                 label="Valider pour la semaine"
-                                onClick={() => onValidateProposal(slot, p)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onValidateProposal(slot, p);
+                                }}
                                 style={{ padding: "4px 6px" }}
                               />
                               <IconButton
-                                icon="📝"
+                                icon="🔄"
                                 label="Proposer"
-                                onClick={() => onOtherProposal(slot)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOtherProposal(slot);
+                                }}
+                                disabled={proposalLoading}
                                 style={{ padding: "4px 6px" }}
                               />
                               <IconButton
                                 icon="👁️"
                                 label="Voir"
-                                onClick={() => openProposalModal(slot, p)}
-                                onMouseEnter={() => prefetchProposalPreview(slot, p)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openProposalModal(slot, p);
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.stopPropagation();
+                                  prefetchProposalPreview(slot, p);
+                                }}
                                 style={{ padding: "4px 6px" }}
                               />
                               {(() => {
