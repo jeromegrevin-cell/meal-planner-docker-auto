@@ -7,6 +7,7 @@ import { readJson, writeJson } from "../lib/jsonStore.js";
 const router = express.Router();
 
 const CHAT_DIR = path.join(process.cwd(), "data", "chat_sessions");
+const CHAT_PERSIST = process.env.CHAT_PERSIST !== "0";
 
 // ---------- OpenAI lazy client ----------
 let cachedClient = null;
@@ -88,9 +89,16 @@ async function ensureChatFile(weekId) {
       usage_by_model: {},
       updated_at: nowIso()
     };
-    await writeJson(p, fresh);
+    if (CHAT_PERSIST) {
+      await writeJson(p, fresh);
+    }
     return { path: p, data: fresh };
   }
+}
+
+async function safeWriteChat(filePath, data) {
+  if (!CHAT_PERSIST) return;
+  await writeJson(filePath, data);
 }
 
 function addUsage(session, model, usage) {
@@ -203,7 +211,7 @@ router.post("/current", async (req, res) => {
     addUsage(data, model, usage);
 
     data.updated_at = nowIso();
-    await writeJson(p, data);
+    await safeWriteChat(p, data);
 
     res.json({ ...data, ...(warning ? { warning } : {}) });
   } catch (e) {
@@ -273,7 +281,7 @@ router.post("/proposals/import", async (req, res) => {
     }
 
     data.updated_at = nowIso();
-    await writeJson(p, data);
+    await safeWriteChat(p, data);
 
     res.json({ ok: true, week_id: weekId, menu_proposals: data.menu_proposals });
   } catch (e) {
@@ -376,7 +384,7 @@ router.post("/proposals/generate", async (req, res) => {
     }
 
     data.updated_at = nowIso();
-    await writeJson(p, data);
+    await safeWriteChat(p, data);
 
     res.json({
       ok: true,
@@ -454,7 +462,7 @@ router.post("/proposals/preview", async (req, res) => {
     list[idx].preview_people_signature = signature;
     data.menu_proposals[slot] = list;
     data.updated_at = nowIso();
-    await writeJson(p, data);
+    await safeWriteChat(p, data);
 
     return res.json({ ok: true, preview });
   } catch (e) {

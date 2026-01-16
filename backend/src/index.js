@@ -75,9 +75,15 @@ function requireApiKey(req, res, next) {
   return res.status(401).json({ error: "unauthorized" });
 }
 
+const protectAllApi = (process.env.MEAL_PLANNER_API_PROTECT_ALL || "").trim() === "1";
+
 // --------------------
 // API routes
 // --------------------
+if (protectAllApi) {
+  app.use("/api", requireApiKey);
+}
+
 app.use("/api/weeks", weeksRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/recipes", recipeFilesRoutes);
