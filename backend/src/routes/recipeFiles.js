@@ -15,6 +15,7 @@ const ROOT_DIR = path.resolve(__dirname, "../../..");
 const DRIVE_INDEX = path.join(ROOT_DIR, "recettes_index.json");
 
 const STATUS_ENUM = new Set(["DRAFT", "VALIDEE", "A_MODIFIER", "REJETEE", "EXTERNE"]);
+const RECIPE_ID_RE = /^rcp_[A-Za-z0-9_-]+$/;
 
 function recipePath(id) {
   return path.join(RECIPES_DIR, `${id}.json`);
@@ -27,6 +28,10 @@ function newRecipeId() {
   const stamp = Date.now();
   const rand = Math.random().toString(16).slice(2, 8);
   return `rcp_${stamp}_${rand}`;
+}
+
+function isValidRecipeId(id) {
+  return typeof id === "string" && RECIPE_ID_RE.test(id);
 }
 
 function normalizeTitle(s) {
@@ -278,6 +283,9 @@ router.post("/save-and-upload", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   const { id } = req.params;
+  if (!isValidRecipeId(id)) {
+    return res.status(400).json({ error: "invalid_recipe_id" });
+  }
   try {
     const recipe = await readJson(recipePath(id));
     return res.json(recipe);
@@ -293,6 +301,9 @@ router.patch("/:id/status", async (req, res) => {
   const { id } = req.params;
   const { status } = req.body || {};
 
+  if (!isValidRecipeId(id)) {
+    return res.status(400).json({ error: "invalid_recipe_id" });
+  }
   if (!STATUS_ENUM.has(status)) {
     return res.status(400).json({ error: "invalid_status", allowed: Array.from(STATUS_ENUM) });
   }
@@ -314,6 +325,9 @@ router.patch("/:id", async (req, res) => {
   const { id } = req.params;
   const patch = req.body || {};
 
+  if (!isValidRecipeId(id)) {
+    return res.status(400).json({ error: "invalid_recipe_id" });
+  }
   try {
     const p = recipePath(id);
     const recipe = await readJson(p);

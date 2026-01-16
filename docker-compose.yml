@@ -3,20 +3,27 @@ services:
     image: postgres:15
     restart: always
     environment:
-      POSTGRES_USER: mealuser
-      POSTGRES_PASSWORD: secretpassword
-      POSTGRES_DB: mealplanner
+      POSTGRES_USER: ${POSTGRES_USER:-mealuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-mealplanner}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   backend:
     build: ./backend
     restart: always
     env_file:
-      - ./backend/.env
+      - ./backend/.env.example
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3001
+      - MEAL_PLANNER_API_KEY=${MEAL_PLANNER_API_KEY}
+      - MEAL_PLANNER_API_PROTECT_ALL=${MEAL_PLANNER_API_PROTECT_ALL:-1}
+      - MEAL_PLANNER_PDFS_PUBLIC=${MEAL_PLANNER_PDFS_PUBLIC:-0}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     depends_on:
       - db
     ports:

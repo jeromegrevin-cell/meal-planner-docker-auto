@@ -46,21 +46,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --------------------
-// Static files (PDFs)
-// --------------------
-app.use("/pdfs", express.static(path.join(__dirname, "../pdfs")));
-
-// --------------------
-// Health checks
-// --------------------
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
-});
-
-// Data health (JSON integrity)
-app.use("/api/health", healthRoutes);
-
-// --------------------
 // API auth (optional)
 // --------------------
 function requireApiKey(req, res, next) {
@@ -75,7 +60,28 @@ function requireApiKey(req, res, next) {
   return res.status(401).json({ error: "unauthorized" });
 }
 
-const protectAllApi = (process.env.MEAL_PLANNER_API_PROTECT_ALL || "").trim() === "1";
+const protectAllApi =
+  (process.env.MEAL_PLANNER_API_PROTECT_ALL || "").trim() === "1";
+
+// --------------------
+// Static files (PDFs)
+// --------------------
+const pdfsPublic = (process.env.MEAL_PLANNER_PDFS_PUBLIC || "").trim() === "1";
+if (pdfsPublic) {
+  app.use("/pdfs", express.static(path.join(__dirname, "../pdfs")));
+} else {
+  app.use("/pdfs", requireApiKey, express.static(path.join(__dirname, "../pdfs")));
+}
+
+// --------------------
+// Health checks
+// --------------------
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Data health (JSON integrity)
+app.use("/api/health", healthRoutes);
 
 // --------------------
 // API routes
@@ -92,8 +98,8 @@ app.use("/api/drive", requireApiKey, driveRoutes);
 // --------------------
 // Server start
 // --------------------
-const PORT = process.env.PORT || 3002;
-const HOST = process.env.HOST || "127.0.0.1";
+const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || "0.0.0.0";
 
 app.listen(PORT, HOST, () => {
   console.log(`[backend] listening on http://${HOST}:${PORT}`);
