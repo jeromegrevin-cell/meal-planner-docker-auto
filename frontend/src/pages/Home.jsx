@@ -5,8 +5,14 @@ import IconButton from "../components/IconButton.jsx";
 const WEEKDAYS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const SLOT_LABELS = { lunch: "Déj", dinner: "Dîn" };
 
+const API_KEY = import.meta.env.VITE_API_KEY || "";
+
 async function fetchJson(url, options) {
-  const r = await fetch(url, options);
+  const headers = new Headers(options?.headers || {});
+  if (API_KEY && !headers.has("x-api-key")) {
+    headers.set("x-api-key", API_KEY);
+  }
+  const r = await fetch(url, { ...options, headers });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
     const msg = j?.details || j?.error || `HTTP ${r.status}`;

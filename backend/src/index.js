@@ -17,7 +17,26 @@ const app = express();
 // --------------------
 // Base middleware
 // --------------------
-app.use(cors());
+const rawCors = (process.env.CORS_ORIGINS || "").trim();
+const defaultCors = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174"
+];
+const allowedOrigins = new Set(
+  (rawCors ? rawCors.split(",") : defaultCors).map((s) => s.trim())
+);
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.has(origin)) return cb(null, true);
+      return cb(null, false);
+    }
+  })
+);
 app.use(express.json());
 
 // --------------------
@@ -42,12 +61,27 @@ app.get("/health", (_req, res) => {
 app.use("/api/health", healthRoutes);
 
 // --------------------
+// API auth (optional)
+// --------------------
+function requireApiKey(req, res, next) {
+  const expected = (process.env.MEAL_PLANNER_API_KEY || "").trim();
+  if (!expected) return next(); // auth disabled
+
+  const header =
+    req.headers["x-api-key"] ||
+    (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+
+  if (header && header === expected) return next();
+  return res.status(401).json({ error: "unauthorized" });
+}
+
+// --------------------
 // API routes
 // --------------------
 app.use("/api/weeks", weeksRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/recipes", recipeFilesRoutes);
-app.use("/api/drive", driveRoutes);
+app.use("/api/drive", requireApiKey, driveRoutes);
 
 // --------------------
 // Server start
