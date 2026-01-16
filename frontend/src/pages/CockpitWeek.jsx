@@ -289,6 +289,10 @@ export default function CockpitWeek() {
     return ALL_SLOTS.map((slot) => [slot, slotsObj[slot] || null]);
   }, [week]);
 
+  const pendingUploadCount = Object.entries(savedRecipeIdsBySlot || {}).filter(
+    ([slot, recipeId]) => recipeId && !uploadedRecipeIdsBySlot?.[slot]
+  ).length;
+
   // --------------------
   // Loaders
   // --------------------
@@ -630,8 +634,11 @@ export default function CockpitWeek() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ recipe_id })
         });
-        setUploadedRecipeIdsBySlot((prev) => ({ ...prev, [slot]: true }));
       }
+      // All uploads succeeded: mark every saved slot as uploaded
+      setUploadedRecipeIdsBySlot(
+        Object.fromEntries(entries.map(([slot]) => [slot, true]))
+      );
     } catch (e) {
       alert(`Upload failed: ${e.message}`);
     }
@@ -992,6 +999,11 @@ export default function CockpitWeek() {
           onClick={onUploadWeek}
           disabled={!week?.week_id}
         />
+        {pendingUploadCount > 0 ? (
+          <span style={{ fontSize: 12, opacity: 0.8 }}>
+            {pendingUploadCount}
+          </span>
+        ) : null}
       </div>
 
       {week?.date_start && week?.date_end && (
@@ -1011,11 +1023,12 @@ export default function CockpitWeek() {
               FREE_TEXT_ALLOWED_SLOTS.has(slot) && !isValidated && !hasRecipe;
             const showProposals = !isValidated;
 
-            const proposals = menuProposals?.[slot] || [];
-            const proposalLoading = !!proposalLoadingBySlot?.[slot];
-            const proposalError = proposalErrorBySlot?.[slot];
-            const people = normalizePeopleFromSlot(s?.people);
-            const totalPeople = peopleTotal(people);
+                    const proposals = menuProposals?.[slot] || [];
+                    const proposalLoading = !!proposalLoadingBySlot?.[slot];
+                    const proposalError = proposalErrorBySlot?.[slot];
+                    const people = normalizePeopleFromSlot(s?.people);
+                    const totalPeople = peopleTotal(people);
+                    const saved = !!savedRecipeIdsBySlot?.[slot];
 
             return (
               <tr
@@ -1110,10 +1123,9 @@ export default function CockpitWeek() {
                         const rid = s?.recipe_id || null;
                         const meta = rid ? recipeCache?.[rid] : null;
                         const isDrive = meta?.source?.type === "DRIVE";
-                        const saved = !!savedRecipeIdsBySlot?.[slot];
                         return !isDrive ? (
                           <IconButton
-                            icon="💾"
+                            icon={saved ? "✅" : "💾"}
                             label="Sauvegarder"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1124,15 +1136,17 @@ export default function CockpitWeek() {
                           />
                         ) : null;
                       })()}
-                      <IconButton
-                        icon="❌"
-                        label="Dévalider"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDevalidateSlot(slot);
-                        }}
-                        style={{ padding: "4px 6px" }}
-                      />
+                      {!saved && (
+                        <IconButton
+                          icon="❌"
+                          label="Dévalider"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDevalidateSlot(slot);
+                          }}
+                          style={{ padding: "4px 6px" }}
+                        />
+                      )}
                     </div>
                   ) : (
                     <>
