@@ -111,98 +111,6 @@ function buildOtherProposalPrompt(slot, people, childAges) {
   );
 }
 
-const CONSTRAINTS_TABLE_DAYS = [
-  "Lundi",
-  "Mardi",
-  "Mercredi",
-  "Jeudi",
-  "Vendredi",
-  "Samedi",
-  "Dimanche"
-];
-
-const CONSTRAINTS_SECTIONS = [
-  {
-    title: "1) Format et méthode (prioritaire)",
-    items: [
-      "Toujours commencer par un tableau récapitulatif (jours x déjeuners/dîners).",
-      "Aucune recette, aucun ingrédient, aucune liste de courses avant validation de ce tableau.",
-      "Les menus restent en brouillon tant qu’ils ne sont pas explicitement validés (“validée”, “à notre goût”).",
-      "En cas de doute/ambiguïté/information manquante : STOP et question avant de continuer."
-    ]
-  },
-  {
-    title: "2) Rythme des repas (structure semaine)",
-    items: [
-      "Pas de déjeuner : lundi, mardi, jeudi, vendredi.",
-      "Les autres repas (midis + soirs) doivent être remplis ou marqués “reste / congélateur”."
-    ]
-  },
-  {
-    title: "3) Personnes et portions",
-    items: [
-      "Menus pour 3 personnes : 2 adultes + 1 enfant de 9 ans.",
-      "Quantités adaptées (pas un simple x3).",
-      "Différences adulte/enfant précisées si nécessaires."
-    ]
-  },
-  {
-    title: "4) Calories et nutrition",
-    items: [
-      "Objectif ~500 kcal par repas (adulte).",
-      "Pas de dérive excessive pour l’enfant.",
-      "Pas de menus vides ou déséquilibrés (ex: soupe seule)."
-    ]
-  },
-  {
-    title: "5) Saison et ingrédients",
-    items: [
-      "Uniquement des légumes de saison.",
-      "Courgette interdite hors saison.",
-      "Équivalences cru/cuit : pâtes x2,5 ; riz x3 ; semoule x2 ; légumineuses x3 ; pommes de terre x1 ; patate douce x1."
-    ]
-  },
-  {
-    title: "6) Répétition des ingrédients (règle clé)",
-    items: [
-      "Un ingrédient principal max 2 fois/semaine.",
-      "Si 2 fois → minimum 2 jours d’écart.",
-      "Aucune exception implicite."
-    ]
-  },
-  {
-    title: "7) Sources des recettes",
-    items: [
-      "Mélanger recettes générées + recettes Google Drive / Recettes.",
-      "Avant de commencer : demander si l’index Drive est à jour ; sinon proposer un rescan."
-    ]
-  },
-  {
-    title: "8) Présentation des listes de courses",
-    items: [
-      "Liste de courses obligatoire après validation des menus.",
-      "Format : tableau (Ingrédient / Quantité / Recettes concernées).",
-      "Élimination explicite des ingrédients inutiles.",
-      "Vérification croisée : aucun ingrédient sans recette, aucune recette sans ingrédient."
-    ]
-  },
-  {
-    title: "9) Budget (option par défaut)",
-    items: [
-      "Menu hebdomadaire complet, budget cible ≤ 60 EUR (Lidl + Carrefour).",
-      "Coûts cohérents avec les tickets mémorisés."
-    ]
-  },
-  {
-    title: "10) Règles de qualité (non négociables)",
-    items: [
-      "Double vérification : verticale (conformité) + horizontale (cohérence globale).",
-      "Zéro ingrédient fantôme, zéro approximation silencieuse.",
-      "Si erreur détectée → correction immédiate, sans justification défensive."
-    ]
-  }
-];
-
 function addDays(dateStr, days) {
   const d = new Date(dateStr + "T00:00:00");
   d.setDate(d.getDate() + days);
@@ -319,8 +227,6 @@ export default function CockpitWeek() {
   const [recipeTitles, setRecipeTitles] = useState({});
   const [recipeCache, setRecipeCache] = useState({});
 
-  const [constraintsOpen, setConstraintsOpen] = useState(false);
-  const [constraints, setConstraints] = useState(null);
 
   const [menuProposals, setMenuProposals] = useState({});
   const [savedRecipeIdsBySlot, setSavedRecipeIdsBySlot] = useState({});
@@ -386,13 +292,6 @@ export default function CockpitWeek() {
     setWeek(w);
     setSelectedWeekId(w.week_id);
     return w;
-  }
-
-  async function loadConstraints(weekId) {
-    const c = await fetchJson(
-      `/api/weeks/${encodeURIComponent(weekId)}/constraints`
-    );
-    setConstraints(c);
   }
 
   async function loadRecipe(recipeId) {
@@ -1058,14 +957,6 @@ export default function CockpitWeek() {
         >
           Proposer menus
         </button>
-        <button
-          onClick={() =>
-            loadConstraints(week.week_id).then(() => setConstraintsOpen(true))
-          }
-          disabled={!week?.week_id}
-        >
-          Contraintes
-        </button>
         <IconButton
           icon="☁️⬆️"
           label="Upload sur Drive"
@@ -1346,101 +1237,6 @@ export default function CockpitWeek() {
           })}
         </tbody>
       </table>
-
-      {constraintsOpen && (
-        <div
-          onClick={() => setConstraintsOpen(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.25)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "min(680px, 92vw)",
-              background: "#fff",
-              borderRadius: 10,
-              padding: 16,
-              border: "1px solid #ddd"
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <div style={{ fontWeight: 800 }}>Contraintes</div>
-              <button
-                onClick={() => setConstraintsOpen(false)}
-                aria-label="Fermer"
-                style={{
-                  marginLeft: "auto",
-                  padding: 0,
-                  fontSize: 18,
-                  lineHeight: 1,
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer"
-                }}
-              >
-                x
-              </button>
-            </div>
-
-            <div style={{ marginTop: 10, fontSize: 13 }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                Tableau récapitulatif (brouillon)
-              </div>
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  marginBottom: 12,
-                  fontSize: 12
-                }}
-              >
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left", padding: "6px 4px" }}></th>
-                    <th style={{ textAlign: "left", padding: "6px 4px" }}>
-                      Déjeuner
-                    </th>
-                    <th style={{ textAlign: "left", padding: "6px 4px" }}>
-                      Dîner
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {CONSTRAINTS_TABLE_DAYS.map((d) => (
-                    <tr key={d} style={{ borderTop: "1px solid #eee" }}>
-                      <td style={{ padding: "6px 4px", width: 120 }}>{d}</td>
-                      <td style={{ padding: "6px 4px", opacity: 0.6 }}>—</td>
-                      <td style={{ padding: "6px 4px", opacity: 0.6 }}>—</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {CONSTRAINTS_SECTIONS.map((section) => (
-                <div key={section.title} style={{ marginBottom: 10 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                    {section.title}
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: 18 }}>
-                    {section.items.map((line, idx) => (
-                      <li key={idx} style={{ marginBottom: 6 }}>
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {proposalModal && (
         <div

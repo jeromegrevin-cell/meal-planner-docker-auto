@@ -5,6 +5,79 @@ import IconButton from "../components/IconButton.jsx";
 const WEEKDAYS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const SLOT_LABELS = { lunch: "Déj", dinner: "Dîn" };
 
+const CONSTRAINTS_SECTIONS = [
+  {
+    title: "1) Rythme des repas (structure semaine)",
+    items: [
+      "Pas de déjeuner : lundi, mardi, jeudi, vendredi.",
+      "Les autres repas (midis + soirs) doivent être remplis ou marqués “reste / congélateur”."
+    ]
+  },
+  {
+    title: "2) Personnes et portions",
+    items: [
+      "Menus pour 3 personnes : 2 adultes + 1 enfant de 9 ans.",
+      "Quantités adaptées (pas un simple x3).",
+      "Différences adulte/enfant précisées si nécessaires."
+    ]
+  },
+  {
+    title: "3) Calories et nutrition",
+    items: [
+      "Objectif ~500 kcal par repas (adulte).",
+      "Pas de dérive excessive pour l’enfant.",
+      "Pas de menus vides ou déséquilibrés (ex: soupe seule)."
+    ]
+  },
+  {
+    title: "4) Saison et ingrédients",
+    items: [
+      "Uniquement des légumes de saison.",
+      "Courgette interdite hors saison.",
+      "Équivalences cru/cuit : pâtes x2,5 ; riz x3 ; semoule x2 ; légumineuses x3 ; pommes de terre x1 ; patate douce x1."
+    ]
+  },
+  {
+    title: "5) Répétition des ingrédients (règle clé)",
+    items: [
+      "Un ingrédient principal max 2 fois/semaine.",
+      "Si 2 fois → minimum 2 jours d’écart.",
+      "Aucune exception implicite."
+    ]
+  },
+  {
+    title: "6) Sources des recettes",
+    items: [
+      "Mélanger recettes générées + recettes Google Drive / Recettes.",
+      "Avant de commencer : demander si l’index Drive est à jour ; sinon proposer un rescan."
+    ]
+  },
+  {
+    title: "7) Présentation des listes de courses",
+    items: [
+      "Liste de courses obligatoire après validation des menus.",
+      "Format : tableau (Ingrédient / Quantité / Recettes concernées).",
+      "Élimination explicite des ingrédients inutiles.",
+      "Vérification croisée : aucun ingrédient sans recette, aucune recette sans ingrédient."
+    ]
+  },
+  {
+    title: "8) Budget (option par défaut)",
+    items: [
+      "Menu hebdomadaire complet, budget cible ≤ 60 EUR (Lidl + Carrefour).",
+      "Coûts cohérents avec les tickets mémorisés."
+    ]
+  },
+  {
+    title: "9) Règles de qualité (non négociables)",
+    items: [
+      "Double vérification : verticale (conformité) + horizontale (cohérence globale).",
+      "Zéro ingrédient fantôme, zéro approximation silencieuse.",
+      "Si erreur détectée → correction immédiate, sans justification défensive."
+    ]
+  }
+];
+
 async function fetchJson(url, options) {
   const r = await fetch(url, options);
   const j = await r.json().catch(() => ({}));
@@ -54,6 +127,7 @@ export default function Home() {
   const [modal, setModal] = useState(null); // { title, recipe, dateLabel }
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState(null);
+  const [constraintsOpen, setConstraintsOpen] = useState(false);
   const [calendarMaxHeight, setCalendarMaxHeight] = useState(() => {
     if (typeof window === "undefined") return 440;
     const h = Math.round(window.innerHeight * 0.6);
@@ -252,6 +326,7 @@ export default function Home() {
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button onClick={onRescanDrive}>Rescan recettes</button>
+          <button onClick={() => setConstraintsOpen(true)}>Contraintes</button>
           <button onClick={() => navigate("/weeks")}>Générer semaine</button>
         </div>
       </div>
@@ -468,6 +543,68 @@ export default function Home() {
                   )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {constraintsOpen && (
+        <div
+          onClick={() => setConstraintsOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.25)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(760px, 96vw)",
+              background: "#fff",
+              borderRadius: 10,
+              padding: 16,
+              border: "1px solid #ddd"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{ fontWeight: 800 }}>Contraintes</div>
+              <button
+                onClick={() => setConstraintsOpen(false)}
+                aria-label="Fermer"
+                style={{
+                  marginLeft: "auto",
+                  padding: 0,
+                  fontSize: 18,
+                  lineHeight: 1,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer"
+                }}
+              >
+                x
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10, fontSize: 13 }}>
+              {CONSTRAINTS_SECTIONS.map((section) => (
+                <div key={section.title} style={{ marginBottom: 10 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    {section.title}
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {section.items.map((line, idx) => (
+                      <li key={idx} style={{ marginBottom: 6 }}>
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
