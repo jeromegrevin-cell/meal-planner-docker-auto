@@ -50,6 +50,32 @@ const DEFAULT_PEOPLE = {
   child_birth_months: [DEFAULT_CHILD_BIRTH_MONTH]
 };
 
+function DriveIcon({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 87.3 78"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: "inline-block", verticalAlign: "middle" }}
+    >
+      <path
+        d="M55.2 0H32.1L0 55.6l11.1 19.2 44.1-74.8z"
+        fill="#0F9D58"
+      />
+      <path
+        d="M87.3 55.6L55.2 0 11.1 74.8l.1.2h64.9l11.2-19.4z"
+        fill="#4285F4"
+      />
+      <path
+        d="M55.2 0L87.3 55.6H32.1L0 55.6 32.1 0h23.1z"
+        fill="#FFC107"
+      />
+    </svg>
+  );
+}
+
 function getSlotLabel(slotKey) {
   return SLOT_LABELS_FR[slotKey] || slotKey;
 }
@@ -1029,6 +1055,9 @@ export default function CockpitWeek() {
                     const people = normalizePeopleFromSlot(s?.people);
                     const totalPeople = peopleTotal(people);
                     const saved = !!savedRecipeIdsBySlot?.[slot];
+                    const validatedRid = s?.recipe_id || null;
+                    const validatedMeta = validatedRid ? recipeCache?.[validatedRid] : null;
+                    const validatedIsDrive = validatedMeta?.source?.type === "DRIVE";
 
             return (
               <tr
@@ -1082,7 +1111,11 @@ export default function CockpitWeek() {
                   {isValidated ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ fontWeight: 700 }}>
-                        {validatedLabel(s)} {totalPeople ? `· ${totalPeople} pers.` : ""}
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          {validatedIsDrive ? <DriveIcon size={14} /> : null}
+                          {validatedLabel(s)}
+                        </span>
+                        {totalPeople ? ` · ${totalPeople} pers.` : ""}
                       </div>
                       <IconButton
                         icon="👁️"
@@ -1206,7 +1239,11 @@ export default function CockpitWeek() {
                               onClick={(e) => e.stopPropagation()}
                             >
                               <span style={{ flex: 1 }}>
-                                {p.title} {totalPeople ? `· ${totalPeople} pers.` : ""}
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                  {p?.source === "DRIVE" ? <DriveIcon size={14} /> : null}
+                                  {p.title}
+                                </span>
+                                {totalPeople ? ` · ${totalPeople} pers.` : ""}
                               </span>
 
                               <IconButton
