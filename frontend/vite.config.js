@@ -9,7 +9,15 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: "http://127.0.0.1:3002",
-        changeOrigin: true
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            const key = process.env.MEAL_PLANNER_API_KEY;
+            if (key) {
+              proxyReq.setHeader("x-api-key", key);
+            }
+          });
+        }
       }
     }
   }
