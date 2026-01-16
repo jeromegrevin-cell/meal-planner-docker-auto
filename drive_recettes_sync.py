@@ -9,15 +9,12 @@ from googleapiclient.http import MediaIoBaseDownload
 # === CONFIG / PATHS ===
 REPO_ROOT = Path(__file__).resolve().parent  # this file sits at repo root (same level as /credentials and /backend)
 
-# Candidate locations for the service-account key (macOS first, then env/Windows/siblings)
+# Candidate locations for the service-account key (outside repo)
 _env_key = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+_secrets_dir = os.environ.get("MEAL_PLANNER_SECRETS_DIR", "").strip()
 CANDIDATE_KEYS = [
-    REPO_ROOT / "credentials" / "chatgpt-recettes-access.json",                 # repo_root/credentials/...
-    REPO_ROOT.parent / "credentials" / "chatgpt-recettes-access.json",          # if someone moves the file into backend/ later
-    Path("/Users/Jerome/meal-planner-docker-auto/credentials/chatgpt-recettes-access.json"),  # absolute macOS path
-    Path(_env_key) if _env_key else None,                                       # env var, if set
-    Path(r"C:\Users\Jerome\meal-planner-docker-auto\credentials\chatgpt-recettes-access.json"),  # legacy Windows path
-    REPO_ROOT / "credentials" / "service_account_credentials.json",             # generic fallback name
+    Path(_env_key) if _env_key else None,  # env var, if set
+    Path(_secrets_dir) / "service_accounts" / "chatgpt-recettes-access.json" if _secrets_dir else None,
 ]
 
 # Pick the first existing path

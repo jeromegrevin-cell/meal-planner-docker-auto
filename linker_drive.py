@@ -1,16 +1,31 @@
 # linker_drive.py
+import os
 import unicodedata
 from pathlib import Path
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-# Chemin vers la clé JSON (dans le sous-dossier credentials)
-SERVICE_ACCOUNT_JSON = str(Path(__file__).parent / "credentials" / "chatgpt-recettes-access.json")
+# Chemin vers la clé JSON (hors repo)
+_env_key = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+_secrets_dir = os.environ.get("MEAL_PLANNER_SECRETS_DIR", "").strip()
+SERVICE_ACCOUNT_JSON = (
+    _env_key
+    or (
+        str(Path(_secrets_dir) / "service_accounts" / "chatgpt-recettes-access.json")
+        if _secrets_dir
+        else ""
+    )
+)
 
 # ID du dossier "Recettes"
 FOLDER_ID = "0B42O_BX-8zVLNjIwN2ZiZWQtMjUwYy00MzA1LWJlYTctZThhZDk1M2UyNGFi"
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+
+if not SERVICE_ACCOUNT_JSON:
+    raise SystemExit("MEAL_PLANNER_SECRETS_DIR or GOOGLE_APPLICATION_CREDENTIALS is required.")
+if not Path(SERVICE_ACCOUNT_JSON).exists():
+    raise SystemExit(f"Service account JSON not found: {SERVICE_ACCOUNT_JSON}")
 
 def _norm(s: str) -> str:
     """Normalise (sans accents, minuscule) pour comparer les titres."""

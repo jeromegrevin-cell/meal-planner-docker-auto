@@ -22,13 +22,13 @@ from googleapiclient.http import MediaIoBaseUpload
 import io
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive.readonly"]
-# Try the same candidate paths your sync script uses
+_env_key = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+_secrets_dir = os.environ.get("MEAL_PLANNER_SECRETS_DIR", "").strip()
 CANDIDATE_KEYS = [
-    REPO / "credentials" / "chatgpt-recettes-access.json",
-    REPO.parent / "credentials" / "chatgpt-recettes-access.json",
-    _Path("/Users/Jerome/meal-planner-docker-auto/credentials/chatgpt-recettes-access.json"),
+    _Path(_env_key) if _env_key else None,
+    _Path(_secrets_dir) / "service_accounts" / "chatgpt-recettes-access.json" if _secrets_dir else None,
 ]
-SERVICE_ACCOUNT_FILE = next((str(p) for p in CANDIDATE_KEYS if _Path(p).exists()), None)
+SERVICE_ACCOUNT_FILE = next((str(p) for p in CANDIDATE_KEYS if p and _Path(p).exists()), None)
 
 def connect_drive():
     if not SERVICE_ACCOUNT_FILE:

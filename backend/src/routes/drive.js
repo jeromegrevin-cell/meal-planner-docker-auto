@@ -113,34 +113,17 @@ async function resolvePythonBin() {
 }
 
 async function resolveCredentialsPath() {
-  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) return null;
+  const envPath = (process.env.GOOGLE_APPLICATION_CREDENTIALS || "").trim();
+  if (envPath && (await fileExists(envPath))) return envPath;
 
-  const candidates = [
-    path.join(process.cwd(), "..", "credentials", "chatgpt-recettes-access.json"),
-    path.join(process.cwd(), "credentials", "chatgpt-recettes-access.json")
-  ];
-
-  for (const p of candidates) {
+  const secretsDir = (process.env.MEAL_PLANNER_SECRETS_DIR || "").trim();
+  if (secretsDir) {
+    const p = path.join(
+      secretsDir,
+      "service_accounts",
+      "chatgpt-recettes-access.json"
+    );
     if (await fileExists(p)) return p;
-  }
-
-  const dirs = [
-    path.join(process.cwd(), "..", "credentials"),
-    path.join(process.cwd(), "credentials")
-  ];
-
-  for (const d of dirs) {
-    try {
-      const files = await fs.readdir(d);
-      const jsons = files.filter((f) => f.endsWith(".json"));
-      const preferred = jsons.find((f) =>
-        f.startsWith("chatgpt-recettes-access")
-      );
-      const pick = preferred || jsons[0];
-      if (pick) return path.join(d, pick);
-    } catch (_e) {
-      // ignore missing dirs
-    }
   }
 
   return null;
@@ -192,6 +175,13 @@ router.post("/rescan", async (_req, res) => {
     const scriptPath = await resolveRescanScriptPath();
     const pythonBin = await resolvePythonBin();
     const credentialsPath = await resolveCredentialsPath();
+    if (!credentialsPath) {
+      return res.status(500).json({
+        ok: false,
+        error: "missing_service_account",
+        details: "Set MEAL_PLANNER_SECRETS_DIR or GOOGLE_APPLICATION_CREDENTIALS"
+      });
+    }
 
     const job = {
       job_id: jobId,
@@ -222,9 +212,7 @@ router.post("/rescan", async (_req, res) => {
 
     const projectRoot = path.join(process.cwd(), ".."); // backend/ -> racine
     const env = { ...process.env };
-    if (credentialsPath) {
-      env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-    }
+    env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
 
     const child = spawn(pythonBin, [scriptPath], {
       cwd: projectRoot,

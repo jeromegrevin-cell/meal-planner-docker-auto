@@ -78,9 +78,10 @@ from googleapiclient.errors import HttpError
 BASE_DIR = Path(__file__).resolve().parent
 
 # Where to look for the service-account key
+SECRETS_DIR = os.environ.get("MEAL_PLANNER_SECRETS_DIR", "").strip()
 SERVICE_ACCOUNT_CANDIDATES = [
     os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip(),
-    str(BASE_DIR / "credentials" / "chatgpt-recettes-access.json"),
+    str(Path(SECRETS_DIR) / "service_accounts" / "chatgpt-recettes-access.json") if SECRETS_DIR else "",
 ]
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
