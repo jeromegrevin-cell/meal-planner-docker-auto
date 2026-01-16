@@ -103,58 +103,105 @@ function buildOtherProposalPrompt(slot, people, childAges) {
       : "";
   return (
     `Propose une AUTRE recette pour ${label}.\n` +
-    `Contraintes: ${adults} adulte(s) + ${children} enfant(s)${agesText}, hiver, simple, budget Lidl/Carrefour.\n` +
+    `Personnes: ${adults} adulte(s) + ${children} enfant(s)${agesText}.\n` +
+    "Rappel contraintes: hiver, simple, budget Lidl/Carrefour, ~500 kcal/adulte, légumes de saison (courgette interdite hors saison).\n" +
+    "Répétitions: ingrédient principal max 2 fois/semaine, si 2 fois -> 2 jours d’écart.\n" +
+    "Sources: mélanger recettes générées + Drive si possible (demander rescan si index non à jour).\n" +
     `Réponds en 1 ligne: "Titre - idée rapide".`
   );
 }
 
-const DAY_LABELS_FR = {
-  mon: "lundi",
-  tue: "mardi",
-  wed: "mercredi",
-  thu: "jeudi",
-  fri: "vendredi",
-  sat: "samedi",
-  sun: "dimanche"
-};
+const CONSTRAINTS_TABLE_DAYS = [
+  "Lundi",
+  "Mardi",
+  "Mercredi",
+  "Jeudi",
+  "Vendredi",
+  "Samedi",
+  "Dimanche"
+];
 
-function formatConstraints(c) {
-  if (!c) return [];
-
-  const out = [];
-
-  if (c.global_constraints?.servings) {
-    out.push(`Tous les repas sont prévus pour ${c.global_constraints.servings} personne(s).`);
+const CONSTRAINTS_SECTIONS = [
+  {
+    title: "1) Format et méthode (prioritaire)",
+    items: [
+      "Toujours commencer par un tableau récapitulatif (jours x déjeuners/dîners).",
+      "Aucune recette, aucun ingrédient, aucune liste de courses avant validation de ce tableau.",
+      "Les menus restent en brouillon tant qu’ils ne sont pas explicitement validés (“validée”, “à notre goût”).",
+      "En cas de doute/ambiguïté/information manquante : STOP et question avant de continuer."
+    ]
+  },
+  {
+    title: "2) Rythme des repas (structure semaine)",
+    items: [
+      "Pas de déjeuner : lundi, mardi, jeudi, vendredi.",
+      "Les autres repas (midis + soirs) doivent être remplis ou marqués “reste / congélateur”."
+    ]
+  },
+  {
+    title: "3) Personnes et portions",
+    items: [
+      "Menus pour 3 personnes : 2 adultes + 1 enfant de 9 ans.",
+      "Quantités adaptées (pas un simple x3).",
+      "Différences adulte/enfant précisées si nécessaires."
+    ]
+  },
+  {
+    title: "4) Calories et nutrition",
+    items: [
+      "Objectif ~500 kcal par repas (adulte).",
+      "Pas de dérive excessive pour l’enfant.",
+      "Pas de menus vides ou déséquilibrés (ex: soupe seule)."
+    ]
+  },
+  {
+    title: "5) Saison et ingrédients",
+    items: [
+      "Uniquement des légumes de saison.",
+      "Courgette interdite hors saison.",
+      "Équivalences cru/cuit : pâtes x2,5 ; riz x3 ; semoule x2 ; légumineuses x3 ; pommes de terre x1 ; patate douce x1."
+    ]
+  },
+  {
+    title: "6) Répétition des ingrédients (règle clé)",
+    items: [
+      "Un ingrédient principal max 2 fois/semaine.",
+      "Si 2 fois → minimum 2 jours d’écart.",
+      "Aucune exception implicite."
+    ]
+  },
+  {
+    title: "7) Sources des recettes",
+    items: [
+      "Mélanger recettes générées + recettes Google Drive / Recettes.",
+      "Avant de commencer : demander si l’index Drive est à jour ; sinon proposer un rescan."
+    ]
+  },
+  {
+    title: "8) Présentation des listes de courses",
+    items: [
+      "Liste de courses obligatoire après validation des menus.",
+      "Format : tableau (Ingrédient / Quantité / Recettes concernées).",
+      "Élimination explicite des ingrédients inutiles.",
+      "Vérification croisée : aucun ingrédient sans recette, aucune recette sans ingrédient."
+    ]
+  },
+  {
+    title: "9) Budget (option par défaut)",
+    items: [
+      "Menu hebdomadaire complet, budget cible ≤ 60 EUR (Lidl + Carrefour).",
+      "Coûts cohérents avec les tickets mémorisés."
+    ]
+  },
+  {
+    title: "10) Règles de qualité (non négociables)",
+    items: [
+      "Double vérification : verticale (conformité) + horizontale (cohérence globale).",
+      "Zéro ingrédient fantôme, zéro approximation silencieuse.",
+      "Si erreur détectée → correction immédiate, sans justification défensive."
+    ]
   }
-
-  if (Array.isArray(c.rules_readonly?.no_lunch_slots) && c.rules_readonly.no_lunch_slots.length > 0) {
-    const slots = c.rules_readonly.no_lunch_slots.map(getSlotLabel);
-    out.push(`Pas de repas prévu pour : ${slots.join(", ")}.`);
-  }
-
-  if (Array.isArray(c.global_constraints?.no_lunch_days) && c.global_constraints.no_lunch_days.length > 0) {
-    const days = c.global_constraints.no_lunch_days.map((d) => DAY_LABELS_FR[d] || d);
-    out.push(`Pas de déjeuner prévu les : ${days.join(", ")}.`);
-  }
-
-  if (typeof c.rules_readonly?.main_ingredient_max_per_week === "number") {
-    out.push(
-      `Un ingrédient principal ne peut pas être utilisé plus de ${c.rules_readonly.main_ingredient_max_per_week} fois par semaine.`
-    );
-  }
-
-  if (typeof c.rules_readonly?.main_ingredient_min_day_gap_if_used_twice === "number") {
-    out.push(
-      `Si un ingrédient principal est utilisé deux fois, il doit y avoir au moins ${c.rules_readonly.main_ingredient_min_day_gap_if_used_twice} jours d'écart.`
-    );
-  }
-
-  if (Array.isArray(c.global_constraints?.status_flow) && c.global_constraints.status_flow.length > 0) {
-    out.push(`Statuts possibles : ${c.global_constraints.status_flow.join(", ")}.`);
-  }
-
-  return out;
-}
+];
 
 function addDays(dateStr, days) {
   const d = new Date(dateStr + "T00:00:00");
@@ -1343,17 +1390,53 @@ export default function CockpitWeek() {
             </div>
 
             <div style={{ marginTop: 10, fontSize: 13 }}>
-              {formatConstraints(constraints).length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {formatConstraints(constraints).map((line, idx) => (
-                    <li key={idx} style={{ marginBottom: 6 }}>
-                      {line}
-                    </li>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                Tableau récapitulatif (brouillon)
+              </div>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  marginBottom: 12,
+                  fontSize: 12
+                }}
+              >
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "6px 4px" }}></th>
+                    <th style={{ textAlign: "left", padding: "6px 4px" }}>
+                      Déjeuner
+                    </th>
+                    <th style={{ textAlign: "left", padding: "6px 4px" }}>
+                      Dîner
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {CONSTRAINTS_TABLE_DAYS.map((d) => (
+                    <tr key={d} style={{ borderTop: "1px solid #eee" }}>
+                      <td style={{ padding: "6px 4px", width: 120 }}>{d}</td>
+                      <td style={{ padding: "6px 4px", opacity: 0.6 }}>—</td>
+                      <td style={{ padding: "6px 4px", opacity: 0.6 }}>—</td>
+                    </tr>
                   ))}
-                </ul>
-              ) : (
-                <div style={{ opacity: 0.8 }}>Aucune contrainte disponible.</div>
-              )}
+                </tbody>
+              </table>
+
+              {CONSTRAINTS_SECTIONS.map((section) => (
+                <div key={section.title} style={{ marginBottom: 10 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    {section.title}
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {section.items.map((line, idx) => (
+                      <li key={idx} style={{ marginBottom: 6 }}>
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           </div>
         </div>

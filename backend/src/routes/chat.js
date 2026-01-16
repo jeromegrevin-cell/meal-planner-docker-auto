@@ -366,7 +366,18 @@ router.post("/proposals/generate", async (req, res) => {
       .filter(Boolean);
 
     const prompt = [
-      "Donne un menu hebdomadaire au format strict suivant (une ligne par slot):",
+      "Tu proposes des idées de plats pour un menu hebdomadaire (brouillon).",
+      "Règles PRIORITAIRES:",
+      "1) Format: une ligne par slot, format strict: '- slot: <titre>'.",
+      "2) Aucune recette/ingrédient/liste de courses avant validation du tableau.",
+      "3) Si ambiguïté/information manquante: STOP et réponds uniquement: 'QUESTION: ...'.",
+      "4) Personnes: 2 adultes + 1 enfant de 9 ans (adapter les portions, pas un x3 aveugle).",
+      "5) Nutrition: ~500 kcal/adulte, pas de menu vide.",
+      "6) Saison: légumes de saison, courgette interdite hors saison.",
+      "7) Équivalences cru/cuit: pâtes x2,5 ; riz x3 ; semoule x2 ; légumineuses x3 ; pommes de terre x1 ; patate douce x1.",
+      "8) Répétitions: ingrédient principal max 2 fois/semaine, si 2 fois -> 2 jours d’écart.",
+      "9) Sources: mixer recettes générées + Drive si possible; demander rescan si index Drive non à jour.",
+      "Donne un menu au format strict suivant (une ligne par slot):",
       ...slots.map((s) => `- ${s}: <titre>`),
       ...avoidLines,
       "Aucun texte en plus."
