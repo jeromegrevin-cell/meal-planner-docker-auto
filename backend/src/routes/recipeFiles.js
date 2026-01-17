@@ -65,6 +65,12 @@ async function loadDriveIndex() {
   }
 }
 
+function filterDriveIndex(index, status) {
+  if (!Array.isArray(index)) return [];
+  if (!status || status === "ALL") return index;
+  return index.filter((item) => String(item?.parse_status || "") === status);
+}
+
 async function findTitleConflicts(title) {
   const norm = normalizeTitle(title);
   const key = titleKey(title);
@@ -82,14 +88,16 @@ async function findTitleConflicts(title) {
         title: item.title,
         file_id: item.file_id,
         fullPath: item.fullPath,
-        webViewLink: item.webViewLink
+        webViewLink: item.webViewLink,
+        parse_status: item.parse_status || null
       });
     } else if (k && k === key) {
       near.push({
         title: item.title,
         file_id: item.file_id,
         fullPath: item.fullPath,
-        webViewLink: item.webViewLink
+        webViewLink: item.webViewLink,
+        parse_status: item.parse_status || null
       });
     }
   }
@@ -220,6 +228,31 @@ router.post("/save", async (req, res) => {
     return res.json({ ok: true, recipe_id: recipe.recipe_id, pdf_path, recipe });
   } catch (e) {
     return res.status(500).json({ error: "recipe_save_failed", details: e.message });
+  }
+});
+
+/**
+ * GET /api/recipes/drive?status=CONFIDENT|INCOMPLETE|ALL
+ * Returns Drive index entries (filtered by parse_status by default).
+ */
+router.get("/drive", async (req, res) => {
+  try {
+    const status = String(req.query?.status || "CONFIDENT").toUpperCase();
+    const index = await loadDriveIndex();
+    const filtered = filterDriveIndex(index, status);
+
+    const out = filtered.map((item) => ({
+      title: item.title,
+      file_id: item.file_id,
+      mimeType: item.mimeType,
+      parse_status: item.parse_status || null,
+      parse_notes: item.parse_notes || [],
+      webViewLink: item.webViewLink || null
+    }));
+
+    res.json({ ok: true, status, count: out.length, items: out });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: "drive_index_failed", details: e.message });
   }
 });
 

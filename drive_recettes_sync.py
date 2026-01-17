@@ -157,13 +157,40 @@ def extract_recipe_text(item: Dict) -> str:
 
 # === PARSING RECETTE ===
 INGR_HEADERS = [r"ingr[ée]dients?", r"courses", r"liste d[ei]s? ingr"]
-STEP_HEADERS = [r"pr[ée]paration", r"[ée]tapes?", r"method(e)?", r"instructions?"]
+STEP_HEADERS = [
+    r"pr[ée]paration",
+    r"[ée]tapes?",
+    r"method(e)?",
+    r"instructions?",
+    r"directions?",
+    r"proc[ée]dure"
+]
+
+FRACTIONS_MAP = {
+    "¼": "1/4",
+    "½": "1/2",
+    "¾": "3/4",
+    "⅓": "1/3",
+    "⅔": "2/3",
+    "⅛": "1/8",
+    "⅜": "3/8",
+    "⅝": "5/8",
+    "⅞": "7/8",
+}
 
 ING_LINE_RE = re.compile(
-    r"^\s*(?P<qty>(\d+([.,]\d+)?|\d+/\d+|\d+\s?x\s?\d+([.,]\d+)?))\s*"
-    r"(?P<unit>g|kg|ml|l|cl|cs|càs|càc|cc|cuil(?:l[èe]re)?s?\s?(?:soupe|cafe|café)?|"
-    r"pinc(?:e|ée)?s?|tranches?|gousses?|boites?|boîtes?|sachets?|verres?|unit(?:és)?|"
-    r"cups?|tbsp|tsp)?\s+"
+    r"^\s*(?P<qty>("
+    r"\d+([.,]\d+)?|\d+/\d+|"
+    r"\d+\s?x\s?\d+([.,]\d+)?|"
+    r"\d+\s?[-–]\s?\d+([.,]\d+)?|"
+    r"[¼½¾⅓⅔⅛⅜⅝⅞]"
+    r"))\s*"
+    r"(?P<unit>g|gr|kg|ml|l|cl|dl|"
+    r"cs|càs|càc|cc|"
+    r"c\.?\s?à\s?s\.?|c\.?\s?à\s?c\.?|"
+    r"cuil(?:l[èe]re)?s?\s?(?:soupe|cafe|café)?|"
+    r"pinc(?:e|ée)?s?|tranches?|gousses?|boites?|boîtes?|sachets?|verres?|"
+    r"unit(?:és)?|cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|lb|lbs)?\s+"
     r"(?P<item>.+)$",
     re.I,
 )
@@ -211,12 +238,24 @@ def lines_to_list(block: str) -> List[str]:
         if l: arr.append(l)
     return arr
 
+def normalize_qty_line(line: str) -> str:
+    line = line.replace("–", "-").replace("—", "-")
+    line = re.sub(r"(\d)\s*[xX]\s*(\d)", r"\1 x \2", line)
+    line = re.sub(r"(\d)([¼½¾⅓⅔⅛⅜⅝⅞])", r"\1 \2", line)
+    for k, v in FRACTIONS_MAP.items():
+        line = line.replace(k, v)
+    m = re.match(r"^\s*(\d+)\s*\(([^)]+)\)\s*(.+)$", line)
+    if m:
+        line = f"{m.group(1)} {m.group(2)} {m.group(3)}"
+    return line
+
 def parse_ingredients_lines(block: str) -> Dict[str, List[str]]:
     valid, invalid = [], []
     for raw in block.splitlines():
         line = re.sub(r"^[\-•*\d.\)\s]+", "", raw).strip()
         if not line:
             continue
+        line = normalize_qty_line(line)
         if VERB_RE.search(line):
             invalid.append(line); continue
         m = ING_LINE_RE.match(line)
