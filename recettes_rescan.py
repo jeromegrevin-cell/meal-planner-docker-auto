@@ -37,6 +37,8 @@ from typing import List, Dict, Optional, Tuple
 # =========================================================
 _PDFMINER_NOISE_SUBSTRINGS = (
     "Cannot set gray non-stroke color because",
+    "Cannot set gray stroke color because",
+    "Could get FontBBox from font descriptor because",
     # keep room for other ultra-common pdfminer noise lines if needed later
 )
 
@@ -321,46 +323,61 @@ def extract_recipe_text(service, item: Dict) -> str:
 
 # ========== PARSING RECETTES ==========
 
-INGR_HEADERS = [r"ingr[ée]dients?", r"courses", r"liste d[ei]s? ingr", r"pour .* personnes"]
-STEP_HEADERS = [r"pr[ée]paration", r"étapes?", r"recette", r"method(e)?", r"instructions?"]
+INGR_HEADERS = [r"ingr[ée]dients?", r"courses", r"liste d[ei]s? ingr"]
+STEP_HEADERS = [r"pr[ée]paration", r"[ée]tapes?", r"method(e)?", r"instructions?"]
+
+# Strict ingredient line: quantity required, unit optional, item required.
+ING_LINE_RE = re.compile(
+    r"^\s*(?P<qty>(\d+([.,]\d+)?|\d+/\d+|\d+\s?x\s?\d+([.,]\d+)?))\s*"
+    r"(?P<unit>g|kg|ml|l|cl|cs|càs|càc|cc|cuil(?:l[èe]re)?s?\s?(?:soupe|cafe|café)?|"
+    r"pinc(?:e|ée)?s?|tranches?|gousses?|boites?|boîtes?|sachets?|verres?|unit(?:és)?|"
+    r"cups?|tbsp|tsp)?\s+"
+    r"(?P<item>.+)$",
+    re.I,
+)
+
+VERB_RE = re.compile(
+    r"\b(ajout(e|er)|m[ée]lang(e|er)|cuir(e|e)|po[êe]l(er|e)|r[ôo]tir|"
+    r"fai(re|tes)|met(te|tre)|incorpor(er|e)|r[ée]server|chauffer|"
+    r"saisir|dorer|bouillir|sauter|verser|add|mix|cook|bake|fry)\b",
+    re.I,
+)
 
 
 def split_sections(text: str) -> Dict[str, str]:
     lines = [l.strip() for l in text.splitlines()]
     if not lines:
-        return {"ingredients": "", "steps": ""}
+        return {"ingredients": "", "steps": "", "status": "INCOMPLETE", "notes": ["empty_text"]}
 
-    def find_header(patterns: List[str]) -> Optional[int]:
-        for i, line in enumerate(lines):
+    def find_header(patterns: List[str], start: int = 0) -> Optional[int]:
+        for i in range(start, len(lines)):
             for p in patterns:
-                if re.search(p, line, re.I):
+                if re.search(p, lines[i], re.I):
                     return i
         return None
 
-    i_ing = find_header(INGR_HEADERS)
-    i_step = find_header(STEP_HEADERS)
+    i_ing = find_header(INGR_HEADERS, 0)
+    i_step = find_header(STEP_HEADERS, (i_ing + 1) if i_ing is not None else 0)
 
-    if i_ing is not None:
-        if i_step is not None and i_step > i_ing:
-            ingredients_txt = "\n".join(lines[i_ing + 1 : i_step])
-        else:
-            ingredients_txt = "\n".join(lines[i_ing + 1 :])
-    else:
-        # fallback: lines with bullets or quantities
-        bullets = [
-            l
-            for l in lines
-            if re.match(r"^[-•*]\s", l)
-            or re.search(r"\d+\s?(g|ml|c[. ]?à|cs|cc)\b", l, re.I)
-        ]
-        ingredients_txt = "\n".join(bullets[:20])
+    notes = []
+    if i_ing is None:
+        notes.append("missing_ingredients_header")
+    if i_step is None:
+        notes.append("missing_steps_header")
 
-    if i_step is not None:
-        steps_txt = "\n".join(lines[i_step + 1 :])
-    else:
-        steps_txt = "\n".join(lines)
+    if i_ing is None or i_step is None or i_step <= i_ing:
+        return {"ingredients": "", "steps": "", "status": "INCOMPLETE", "notes": notes}
 
-    return {"ingredients": ingredients_txt.strip(), "steps": steps_txt.strip()}
+    ingredients_txt = "\n".join(lines[i_ing + 1 : i_step]).strip()
+    steps_txt = "\n".join(lines[i_step + 1 :]).strip()
+
+    status = "CONFIDENT" if ingredients_txt and steps_txt else "INCOMPLETE"
+    if not ingredients_txt:
+        notes.append("empty_ingredients_block")
+    if not steps_txt:
+        notes.append("empty_steps_block")
+
+    return {"ingredients": ingredients_txt, "steps": steps_txt, "status": status, "notes": notes}
 
 
 def lines_to_list(block: str) -> List[str]:
@@ -370,6 +387,24 @@ def lines_to_list(block: str) -> List[str]:
         if l:
             out.append(l)
     return out
+
+
+def parse_ingredients_lines(block: str) -> Dict[str, List[str]]:
+    valid: List[str] = []
+    invalid: List[str] = []
+    for raw in block.splitlines():
+        line = re.sub(r"^[\-•*\d.\)\s]+", "", raw).strip()
+        if not line:
+            continue
+        if VERB_RE.search(line):
+            invalid.append(line)
+            continue
+        m = ING_LINE_RE.match(line)
+        if not m or not m.group("item"):
+            invalid.append(line)
+            continue
+        valid.append(line)
+    return {"valid": valid, "invalid": invalid}
 
 
 def parse_portions(title: str, ingredients_raw: str, steps_raw: str) -> int:
@@ -546,10 +581,32 @@ def main():
                 continue
 
             sections = split_sections(text)
-            ingredients_list = lines_to_list(sections["ingredients"])[:120]
+            parsed_ing = parse_ingredients_lines(sections["ingredients"])
+            ingredients_list = parsed_ing["valid"][:120]
             steps_list = lines_to_list(sections["steps"])[:200]
             portions = parse_portions(name, sections["ingredients"], sections["steps"])
-            nutr = compute_nutrition(ingredients_list, portions)
+
+            status = sections.get("status", "INCOMPLETE")
+            notes = sections.get("notes", [])
+
+            if parsed_ing["invalid"]:
+                status = "INCOMPLETE"
+                notes = notes + ["invalid_ingredient_lines"]
+            if not ingredients_list or not steps_list:
+                status = "INCOMPLETE"
+                if not ingredients_list:
+                    notes = notes + ["no_valid_ingredients"]
+                if not steps_list:
+                    notes = notes + ["no_steps"]
+
+            nutr = compute_nutrition(ingredients_list, portions) if status == "CONFIDENT" else {
+                "total_kcal": 0,
+                "kcal_per_portion": 0,
+                "proteins_g": 0,
+                "lipids_g": 0,
+                "carbs_g": 0,
+                "nutrition_details": [],
+            }
 
             created = it.get("createdTime", "")
             modified = it.get("modifiedTime", "")
@@ -570,6 +627,9 @@ def main():
                 "steps_raw": sections["steps"],
                 "ingredients": ingredients_list,
                 "steps": steps_list,
+                "parse_status": status,
+                "parse_notes": notes,
+                "ingredients_invalid": parsed_ing["invalid"],
                 **nutr,
             }
             index.append(entry)
