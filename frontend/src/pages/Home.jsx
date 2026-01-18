@@ -78,9 +78,33 @@ const CONSTRAINTS_SECTIONS = [
   }
 ];
 
-async function fetchJson(url, options) {
-  const r = await fetch(url, options);
+let authInFlight = null;
+
+async function ensureAuth() {
+  if (authInFlight) return authInFlight;
+  const password = window.prompt("Mot de passe requis pour accéder à l’API :");
+  if (!password) throw new Error("auth_cancelled");
+
+  authInFlight = fetchJson("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+    _noAuthRetry: true
+  }).finally(() => {
+    authInFlight = null;
+  });
+
+  return authInFlight;
+}
+
+async function fetchJson(url, options = {}) {
+  const { _retried, _noAuthRetry, ...fetchOptions } = options;
+  const r = await fetch(url, { ...fetchOptions, credentials: "include" });
   const j = await r.json().catch(() => ({}));
+  if (r.status === 401 && !_retried && !_noAuthRetry) {
+    await ensureAuth();
+    return fetchJson(url, { ...options, _retried: true });
+  }
   if (!r.ok) {
     const msg = j?.details || j?.error || `HTTP ${r.status}`;
     throw new Error(msg);
