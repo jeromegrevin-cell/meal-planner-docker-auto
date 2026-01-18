@@ -17,6 +17,9 @@ let lastRescanAtMs = 0;
 const MIN_RESCAN_INTERVAL_MS = Number(
   process.env.DRIVE_RESCAN_MIN_INTERVAL_MS || 60_000
 );
+const MAX_RESCAN_RUNTIME_MS = Number(
+  process.env.DRIVE_RESCAN_MAX_RUNTIME_MS || 15 * 60_000
+);
 
 function nowIso() {
   return new Date().toISOString();
@@ -46,6 +49,13 @@ async function safeReadJson(p) {
   } catch (_e) {
     return null;
   }
+}
+
+async function finalizeJob(jobId, updater, fallback) {
+  const current = (await safeReadJson(jobPath(jobId))) || fallback || {};
+  const next = typeof updater === "function" ? updater(current) : current;
+  await writeJson(jobPath(jobId), next);
+  return next;
 }
 
 async function getLatestJob() {
@@ -141,6 +151,30 @@ async function resolveCredentialsPath() {
 router.get("/rescan/status", async (_req, res) => {
   try {
     const latest = await getLatestJob();
+    if (latest?.status === "running" && latest?.started_at) {
+      const startedAt = Date.parse(latest.started_at);
+      if (!Number.isNaN(startedAt)) {
+        const ageMs = Date.now() - startedAt;
+        if (ageMs > MAX_RESCAN_RUNTIME_MS) {
+          const patched = await finalizeJob(
+            latest.job_id,
+            (j) => ({
+              ...j,
+              status: "failed",
+              finished_at: nowIso(),
+              exit_code: null,
+              error: "stale_running_job_timeout"
+            }),
+            latest
+          );
+          return res.json({
+            ok: true,
+            latest: patched,
+            running_job_id: runningJobId
+          });
+        }
+      }
+    }
     res.json({
       ok: true,
       latest: latest || null,
@@ -239,35 +273,48 @@ router.post("/rescan", async (_req, res) => {
     child.stdout.pipe(out);
     child.stderr.pipe(out);
 
-    child.on("error", async (err) => {
-      const j = (await safeReadJson(jobPath(jobId))) || job;
-      j.status = "failed";
-      j.finished_at = nowIso();
-      j.exit_code = null;
-      j.error = `spawn_error:${err.message}`;
-      await writeJson(jobPath(jobId), j);
+    // Persist PID for traceability
+    await finalizeJob(
+      jobId,
+      (j) => ({ ...j, pid: child.pid }),
+      job
+    );
 
-      out.end();
+    let finalized = false;
+    const finalizeOnce = async (updater) => {
+      if (finalized) return;
+      finalized = true;
+      await finalizeJob(jobId, updater, job);
       runningJobId = null;
+      out.end();
+    };
+
+    const timeout = setTimeout(() => {
+      try {
+        child.kill("SIGTERM");
+      } catch (_e) {}
+    }, MAX_RESCAN_RUNTIME_MS);
+
+    child.on("error", async (err) => {
+      clearTimeout(timeout);
+      await finalizeOnce((j) => ({
+        ...j,
+        status: "failed",
+        finished_at: nowIso(),
+        exit_code: null,
+        error: `spawn_error:${err.message}`
+      }));
     });
 
     child.on("close", async (code) => {
-      const j = (await safeReadJson(jobPath(jobId))) || job;
-      j.finished_at = nowIso();
-      j.exit_code = Number(code);
-
-      if (code === 0) {
-        j.status = "done";
-        j.error = null;
-      } else {
-        j.status = "failed";
-        j.error = `exit_code:${code}`;
-      }
-
-      await writeJson(jobPath(jobId), j);
-
-      runningJobId = null;
-      out.end();
+      clearTimeout(timeout);
+      await finalizeOnce((j) => ({
+        ...j,
+        finished_at: nowIso(),
+        exit_code: Number(code),
+        status: code === 0 ? "done" : "failed",
+        error: code === 0 ? null : `exit_code:${code}`
+      }));
     });
   } catch (e) {
     runningJobId = null;
