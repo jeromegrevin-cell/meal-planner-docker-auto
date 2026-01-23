@@ -141,6 +141,18 @@ function addDays(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
+function getMonday(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay(); // 0 = Sunday, 1 = Monday
+  const delta = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+function getSundayFromMonday(mondayStr) {
+  return addDays(mondayStr, 6);
+}
+
 function formatDateFr(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T00:00:00");
@@ -417,6 +429,12 @@ export default function CockpitWeek() {
       }
 
       await loadMenuProposals(w.week_id);
+
+      if (w?.date_start && w?.date_end && w?.week_id) {
+        setPrepWeekId(w.week_id);
+        setPrepStart(w.date_start);
+        setPrepEnd(w.date_end);
+      }
     })();
   }, []);
 
@@ -450,6 +468,12 @@ export default function CockpitWeek() {
 
     setSelectedSlot(first);
     await loadMenuProposals(w.week_id);
+
+    if (w?.date_start && w?.date_end && w?.week_id) {
+      setPrepWeekId(w.week_id);
+      setPrepStart(w.date_start);
+      setPrepEnd(w.date_end);
+    }
   }
 
   async function onPrepareWeek() {
@@ -979,17 +1003,25 @@ export default function CockpitWeek() {
           type="date"
           value={prepStart}
           onChange={(e) => {
-            const start = e.target.value;
-            if (!start) return;
-            setPrepStart(start);
-            setPrepEnd(addDays(start, 6));
-            setPrepWeekId(getWeekId(start));
+            const picked = e.target.value;
+            if (!picked) return;
+            const monday = getMonday(picked);
+            setPrepStart(monday);
+            setPrepEnd(getSundayFromMonday(monday));
+            setPrepWeekId(getWeekId(monday));
           }}
         />
         <input
           type="date"
           value={prepEnd}
-          onChange={(e) => setPrepEnd(e.target.value)}
+          onChange={(e) => {
+            const picked = e.target.value;
+            if (!picked) return;
+            const monday = getMonday(addDays(picked, -6));
+            setPrepStart(monday);
+            setPrepEnd(getSundayFromMonday(monday));
+            setPrepWeekId(getWeekId(monday));
+          }}
         />
 
         <button onClick={onPrepareWeek}>Préparer</button>
