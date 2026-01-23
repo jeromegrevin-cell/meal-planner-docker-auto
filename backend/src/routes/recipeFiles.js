@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs/promises";
 import { fileURLToPath } from "url";
 import { readJson, writeJson } from "../lib/jsonStore.js";
+import { validateRecipe } from "../lib/recipeValidation.js";
 
 const router = express.Router();
 
@@ -213,6 +214,7 @@ router.post("/save", async (req, res) => {
   const preview = req.body?.preview || null;
 
   if (!title) return res.status(400).json({ error: "missing_title" });
+  if (!preview) return res.status(400).json({ error: "missing_preview" });
 
   const conflicts = await findTitleConflicts(title);
   if (conflicts.exact.length || conflicts.near.length) {
@@ -224,6 +226,10 @@ router.post("/save", async (req, res) => {
 
   try {
     const recipe = await saveRecipeJson({ title, source, people, preview });
+    const validation = validateRecipe(recipe, { requireContent: true });
+    if (!validation.ok) {
+      return res.status(400).json({ error: "invalid_recipe", details: validation.errors });
+    }
     const pdf_path = await generatePdfStub(recipe.recipe_id, recipe.title);
     return res.json({ ok: true, recipe_id: recipe.recipe_id, pdf_path, recipe });
   } catch (e) {
@@ -267,6 +273,10 @@ router.post("/upload", async (req, res) => {
 
   try {
     const recipe = await readJson(recipePath(recipe_id));
+    const validation = validateRecipe(recipe, { requireContent: true });
+    if (!validation.ok) {
+      return res.status(400).json({ error: "invalid_recipe", details: validation.errors });
+    }
     const conflicts = await findTitleConflicts(recipe.title || "");
     if (conflicts.exact.length || conflicts.near.length) {
       return res.status(409).json({ error: "duplicate_title", conflicts });
@@ -293,6 +303,7 @@ router.post("/save-and-upload", async (req, res) => {
   const preview = req.body?.preview || null;
 
   if (!title) return res.status(400).json({ error: "missing_title" });
+  if (!preview) return res.status(400).json({ error: "missing_preview" });
 
   const conflicts = await findTitleConflicts(title);
   if (conflicts.exact.length || conflicts.near.length) {
@@ -301,6 +312,10 @@ router.post("/save-and-upload", async (req, res) => {
 
   try {
     const recipe = await saveRecipeJson({ title, source, people, preview });
+    const validation = validateRecipe(recipe, { requireContent: true });
+    if (!validation.ok) {
+      return res.status(400).json({ error: "invalid_recipe", details: validation.errors });
+    }
     const pdf_path = await generatePdfStub(recipe.recipe_id, recipe.title);
     const drive_path = await uploadPdfStub(recipe, pdf_path);
     return res.json({
@@ -345,6 +360,12 @@ router.patch("/:id/status", async (req, res) => {
     const p = recipePath(id);
     const recipe = await readJson(p);
     recipe.status = status;
+    if (status === "VALIDEE" || status === "EXTERNE") {
+      const validation = validateRecipe(recipe, { requireContent: true });
+      if (!validation.ok) {
+        return res.status(400).json({ error: "invalid_recipe", details: validation.errors });
+      }
+    }
     recipe.updated_at = nowIso();
     await writeJson(p, recipe);
     return res.json(recipe);

@@ -98,11 +98,11 @@ async function ensureRecipeExists(recipeId) {
     recipe_id: recipeId,
     title: `${recipeId} (placeholder)`,
     source: { type: "LOCAL", drive_path: "" },
-    status: "DRAFT",
+    status: "A_MODIFIER",
     servings: 3,
     season: ["hiver"],
     main_ingredient: "",
-    notes: "",
+    notes: "placeholder_auto_generated",
     content: {
       description_courte: "Recette placeholder pour tests cockpit.",
       ingredients: [],

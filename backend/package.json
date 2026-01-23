@@ -7,11 +7,12 @@
     "check:data": "node scripts/check-json.js",
     "check:data:fix": "node scripts/check-json.js --fix",
     "check:duplicates": "python3 ../scripts/find_recipe_duplicates.py",
+    "check:recipes": "node scripts/validate-recipes.js",
 
-    "prestart": "node scripts/check-json.js && node scripts/check-env.js",
+    "prestart": "node scripts/check-json.js",
     "start": "node src/index.js",
 
-    "predev": "node scripts/check-json.js && node scripts/check-env.js",
+    "predev": "node scripts/check-json.js",
     "dev": "nodemon --legacy-watch src/index.js"
   },
   "dependencies": {
@@ -20,8 +21,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "openai": "^6.16.0",
-    "pg": "^8.12.0"
+    "openai": "^6.16.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.7"

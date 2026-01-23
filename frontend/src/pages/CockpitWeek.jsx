@@ -597,6 +597,23 @@ export default function CockpitWeek() {
     const people = normalizePeopleFromSlot(s?.people);
 
     try {
+      let preview = null;
+      if (rid) {
+        const recipe = await fetchJson(`/api/recipes/${rid}`);
+        preview = recipe?.content || null;
+      } else {
+        const j = await fetchJson("/api/chat/preview-title", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, people })
+        });
+        preview = j?.preview || null;
+      }
+      if (!preview) {
+        alert("Impossible de générer un aperçu de recette.");
+        return;
+      }
+
       const j = await fetchJson("/api/recipes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -605,7 +622,8 @@ export default function CockpitWeek() {
           week_id: week?.week_id,
           slot,
           source: { type: "MENU_VALIDATED" },
-          people
+          people,
+          preview
         })
       });
       if (j?.recipe_id) {
