@@ -9,10 +9,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       host: "127.0.0.1",
-      port: 8003,
+      port: 5174,
       proxy: {
         "/api": {
-          target: "http://127.0.0.1:8004",
+          target: "http://127.0.0.1:3002",
           changeOrigin: true,
           configure: (proxy) => {
             proxy.on("proxyReq", (proxyReq) => {

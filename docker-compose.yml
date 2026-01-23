@@ -6,13 +6,13 @@ services:
       - ./backend/.env.example
     environment:
       - HOST=0.0.0.0
-      - PORT=8004
+      - PORT=3002
       - MEAL_PLANNER_API_KEY=${MEAL_PLANNER_API_KEY}
       - MEAL_PLANNER_API_PROTECT_ALL=${MEAL_PLANNER_API_PROTECT_ALL:-1}
       - MEAL_PLANNER_PDFS_PUBLIC=${MEAL_PLANNER_PDFS_PUBLIC:-0}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8003,http://127.0.0.1:8003}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5174,http://127.0.0.1:5174}
     ports:
-      - "8004:8004"
+      - "3002:3002"
     volumes:
       - ./backend:/usr/src/app
       - /usr/src/app/node_modules
@@ -24,9 +24,9 @@ services:
     depends_on:
       - backend
     environment:
-      - VITE_API_URL=http://localhost:8004/api
+      - VITE_API_URL=http://localhost:3002/api
     ports:
-      - "8003:8003"
+      - "5174:5174"
     volumes:
       - ./frontend:/usr/src/app
       - /usr/src/app/node_modules
