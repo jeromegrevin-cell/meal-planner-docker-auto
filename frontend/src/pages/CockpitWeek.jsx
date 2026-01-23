@@ -448,7 +448,7 @@ export default function CockpitWeek() {
       const saved = week.slots?.[slot]?.free_text;
       if (typeof saved === "string") next[slot] = saved;
     }
-    setFreeTextBySlot((prev) => ({ ...next, ...prev }));
+    setFreeTextBySlot(next);
   }, [week?.week_id]);
 
   // --------------------
