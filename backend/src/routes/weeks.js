@@ -41,12 +41,21 @@ async function safeReadJson(filePath) {
 }
 
 function isValidWeekId(weekId) {
-  // YYYY-WNN
+  // Format: DD-MM_to_DD-MM_YYYY (ex: 24-01_to_30-01_2026)
   if (typeof weekId !== "string") return false;
-  const m = weekId.match(/^(\d{4})-W(\d{2})$/);
-  if (!m) return false;
-  const weekNum = Number(m[2]);
-  return Number.isInteger(weekNum) && weekNum >= 1 && weekNum <= 53;
+  return /^\d{2}-\d{2}_to_\d{2}-\d{2}_\d{4}$/.test(weekId);
+}
+
+function buildWeekIdFromRange(dateStart, dateEnd) {
+  const [y1, m1, d1] = dateStart.split("-").map((v) => Number(v));
+  const [y2, m2, d2] = dateEnd.split("-").map((v) => Number(v));
+  if (!Number.isFinite(y1) || !Number.isFinite(m1) || !Number.isFinite(d1)) return "";
+  if (!Number.isFinite(y2) || !Number.isFinite(m2) || !Number.isFinite(d2)) return "";
+  const dd1 = String(d1).padStart(2, "0");
+  const mm1 = String(m1).padStart(2, "0");
+  const dd2 = String(d2).padStart(2, "0");
+  const mm2 = String(m2).padStart(2, "0");
+  return `${dd1}-${mm1}_to_${dd2}-${mm2}_${y1}`;
 }
 
 function isISODate(d) {
@@ -227,22 +236,13 @@ router.get("/current", async (_req, res) => {
 /**
  * POST /api/weeks/prepare
  * body: { week_id, date_start, date_end }
- * Cree la semaine si absente, et cree aussi les recipes placeholders si besoin.
+ * Cree la semaine si absente, avec slots vides.
  */
 router.post("/prepare", async (req, res) => {
   try {
     const weekId = String(req.body?.week_id || "").trim();
     const dateStart = String(req.body?.date_start || "").trim();
     const dateEnd = String(req.body?.date_end || "").trim();
-
-    if (!weekId) return res.status(400).json({ error: "missing_week_id" });
-    if (!isValidWeekId(weekId)) {
-      return res.status(400).json({
-        error: "invalid_week_id",
-        details:
-          "Expected format YYYY-WNN with NN between 01 and 53 (e.g., 2026-W03)"
-      });
-    }
 
     if (!dateStart || !dateEnd) {
       return res.status(400).json({
@@ -263,20 +263,34 @@ router.post("/prepare", async (req, res) => {
       });
     }
 
+    const expectedWeekId = buildWeekIdFromRange(dateStart, dateEnd);
+    if (!expectedWeekId) {
+      return res.status(400).json({
+        error: "invalid_week_id",
+        details: "Unable to compute week_id from date range"
+      });
+    }
+    if (weekId && weekId !== expectedWeekId) {
+      return res.status(400).json({
+        error: "invalid_week_id",
+        details: `Expected week_id ${expectedWeekId}`
+      });
+    }
+
     await ensureDir(WEEKS_DIR);
 
-    const p = path.join(WEEKS_DIR, `${weekId}.json`);
+    const finalWeekId = expectedWeekId;
+    const p = path.join(WEEKS_DIR, `${finalWeekId}.json`);
 
     // Si existant (même si ancien): renvoyer (comportement identique)
     const existing = await safeReadJson(p);
     if (existing) {
-      return res.status(200).json({ created: false, week: existing });
+      return res.status(409).json({ error: "week_exists", week: existing });
     }
 
-    // IMPORTANT: recipe_id present != "validé menu"
-    // On initialise validated=false partout.
+    // IMPORTANT: slots vides, validated=false partout.
     const week = {
-      week_id: weekId,
+      week_id: finalWeekId,
       date_start: dateStart,
       date_end: dateEnd,
       timezone: "Europe/Paris",
@@ -286,28 +300,14 @@ router.post("/prepare", async (req, res) => {
         main_ingredient_min_day_gap_if_used_twice: 2,
         seasonality_required: true
       },
-      slots: {
-        mon_dinner: { recipe_id: "rcp_0001", validated: false, people: defaultPeople() },
-        tue_dinner: { recipe_id: "rcp_0002", validated: false, people: defaultPeople() },
-        wed_lunch: { recipe_id: "rcp_0003", validated: false, people: defaultPeople() },
-        wed_dinner: { recipe_id: "rcp_0004", validated: false, people: defaultPeople() },
-        thu_dinner: { recipe_id: "rcp_0005", validated: false, people: defaultPeople() },
-        fri_dinner: { recipe_id: "rcp_0006", validated: false, people: defaultPeople() },
-        sat_lunch: { recipe_id: "rcp_0003", validated: false, people: defaultPeople() },
-        sat_dinner: { recipe_id: "rcp_0002", validated: false, people: defaultPeople() },
-        sun_lunch: { recipe_id: "rcp_0004", validated: false, people: defaultPeople() },
-        sun_dinner: { recipe_id: "rcp_0001", validated: false, people: defaultPeople() }
-      },
+      slots: Object.fromEntries(
+        Array.from(ALLOWED_SLOTS).map((slot) => [
+          slot,
+          { recipe_id: null, free_text: "", validated: false, people: defaultPeople() }
+        ])
+      ),
       updated_at: nowIso()
     };
-
-    // creer aussi les recettes si absentes
-    const recipeIds = [
-      ...new Set(Object.values(week.slots).map((s) => s.recipe_id))
-    ];
-    for (const rid of recipeIds) {
-      await ensureRecipeExists(rid);
-    }
 
     await writeJson(p, week);
     res.status(201).json({ created: true, week });
