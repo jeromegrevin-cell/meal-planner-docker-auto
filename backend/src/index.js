@@ -22,8 +22,8 @@ const rawCors = (process.env.CORS_ORIGINS || "").trim();
 const defaultCors = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  "http://localhost:5174",
-  "http://127.0.0.1:5174"
+  "http://localhost:8003",
+  "http://127.0.0.1:8003"
 ];
 const allowedOrigins = new Set(
   (rawCors ? rawCors.split(",") : defaultCors).map((s) => s.trim())
