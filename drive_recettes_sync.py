@@ -156,14 +156,30 @@ def extract_recipe_text(item: Dict) -> str:
     return extract_text_from_plain(local_path)
 
 # === PARSING RECETTE ===
-INGR_HEADERS = [r"ingr[ée]dients?", r"courses", r"liste d[ei]s? ingr"]
+INGR_HEADERS = [
+    r"ingr[ée]dients?",
+    r"ingredients?",
+    r"liste d[ei]s? ingr",
+    r"liste des ingrédients",
+    r"composition",
+    r"pour la (p[aâ]te|garniture|sauce)",
+    r"pour les? (p[aâ]tes?|garniture|sauce)",
+    r"i\s*n\s*g\s*r\s*[ée]?\s*d\s*i\s*e\s*n\s*t\s*s?"
+]
 STEP_HEADERS = [
     r"pr[ée]paration",
     r"[ée]tapes?",
+    r"r[ée]alisation",
+    r"mode op[ée]ratoire",
+    r"cuisson",
     r"method(e)?",
     r"instructions?",
     r"directions?",
-    r"proc[ée]dure"
+    r"proc[ée]dure",
+    r"steps?",
+    r"h(?:ow)?\s*to\s*(?:make|cook)",
+    r"m\s*e\s*t\s*h\s*o\s*d",
+    r"p\s*r\s*[ée]?\s*p\s*a\s*r\s*a\s*t\s*i\s*o\s*n"
 ]
 
 FRACTIONS_MAP = {
@@ -195,6 +211,16 @@ ING_LINE_RE = re.compile(
     re.I,
 )
 
+QTY_ONLY_RE = re.compile(
+    r"^\s*(\d+([.,]\d+)?|\d+/\d+|\d+\s?x\s?\d+([.,]\d+)?|[¼½¾⅓⅔⅛⅜⅝⅞])\s*"
+    r"(g|gr|kg|ml|l|cl|dl|cs|càs|càc|cc|"
+    r"c\.?\s?à\s?s\.?|c\.?\s?à\s?c\.?|"
+    r"cuil(?:l[èe]re)?s?\s?(?:soupe|cafe|café)?|"
+    r"pinc(?:e|ée)?s?|tranches?|gousses?|boites?|boîtes?|sachets?|verres?|"
+    r"unit(?:és)?|cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|lb|lbs)?\s*$",
+    re.I,
+)
+
 VERB_RE = re.compile(
     r"\b(ajout(e|er)|m[ée]lang(e|er)|cuir(e|e)|po[êe]l(er|e)|r[ôo]tir|"
     r"fai(re|tes)|met(te|tre)|incorpor(er|e)|r[ée]server|chauffer|"
@@ -202,12 +228,33 @@ VERB_RE = re.compile(
     re.I,
 )
 
+SKIP_INGR_LINE_RE = re.compile(
+    r"^(pour|for)\b|^(garniture|sauce|p[âa]te)\b|^ingredients?\b|^ingr[ée]dients?\b|"
+    r"^(serves|serve|yield|makes)\b|^note\b|^optional\b|^assaisonnement\b",
+    re.I,
+)
+
+SKIP_INGR_SIMPLE_RE = re.compile(
+    r"^(sel|poivre|sel et poivre|sel/poivre|au go[uû]t|selon le go[uû]t)$",
+    re.I,
+)
+
+STEP_MARK_RE = re.compile(r"^\s*(\d+[\)\.]|[ée]tape|step)\b", re.I)
+
 def split_sections(text: str) -> Dict[str, str]:
     lines = [l.strip() for l in text.splitlines()]
+    if not lines:
+        return {"ingredients": "", "steps": "", "status": "INCOMPLETE", "notes": ["empty_text"]}
 
     def find_header(patterns: List[str], start: int = 0) -> Optional[int]:
         for i in range(start, len(lines)):
             if any(re.search(p, lines[i], re.I) for p in patterns):
+                return i
+        return None
+
+    def find_first_step_marker(block_lines: List[str]) -> Optional[int]:
+        for i, line in enumerate(block_lines):
+            if STEP_MARK_RE.search(line):
                 return i
         return None
 
@@ -219,11 +266,32 @@ def split_sections(text: str) -> Dict[str, str]:
         notes.append("missing_ingredients_header")
     if i_prep is None:
         notes.append("missing_steps_header")
-    if i_ing is None or i_prep is None or i_prep <= i_ing:
-        return {"ingredients": "", "steps": "", "status": "INCOMPLETE", "notes": notes}
+    if i_ing is None and i_prep is not None:
+        ingredients_txt = "\n".join(lines[:i_prep]).strip()
+        steps_txt = "\n".join(lines[i_prep + 1 :]).strip()
+        notes.append("ingredients_fallback_before_steps")
+    elif i_ing is not None and i_prep is None:
+        ingredients_txt = "\n".join(lines[i_ing + 1 :]).strip()
+        steps_txt = ""
+        idx = find_first_step_marker(lines[i_ing + 1 :])
+        if idx is not None:
+            block = lines[i_ing + 1 :]
+            ingredients_txt = "\n".join(block[:idx]).strip()
+            steps_txt = "\n".join(block[idx:]).strip()
+            notes.append("steps_fallback_detected")
+    elif i_ing is None and i_prep is None:
+        idx = find_first_step_marker(lines)
+        if idx is None:
+            return {"ingredients": "", "steps": "", "status": "INCOMPLETE", "notes": notes}
+        ingredients_txt = "\n".join(lines[:idx]).strip()
+        steps_txt = "\n".join(lines[idx:]).strip()
+        notes.append("fallback_no_headers")
+    else:
+        if i_prep <= i_ing:
+            return {"ingredients": "", "steps": "", "status": "INCOMPLETE", "notes": notes}
+        ingredients_txt = "\n".join(lines[i_ing + 1 : i_prep]).strip()
+        steps_txt = "\n".join(lines[i_prep + 1 :]).strip()
 
-    ingredients_txt = "\n".join(lines[i_ing + 1 : i_prep]).strip()
-    steps_txt = "\n".join(lines[i_prep + 1 :]).strip()
     status = "CONFIDENT" if ingredients_txt and steps_txt else "INCOMPLETE"
     if not ingredients_txt:
         notes.append("empty_ingredients_block")
@@ -251,17 +319,39 @@ def normalize_qty_line(line: str) -> str:
 
 def parse_ingredients_lines(block: str) -> Dict[str, List[str]]:
     valid, invalid = [], []
-    for raw in block.splitlines():
-        line = re.sub(r"^[\-•*\d.\)\s]+", "", raw).strip()
-        if not line:
+    raw_lines = [
+        re.sub(r"^[\-•*]+\s*", "", raw).strip()
+        for raw in block.splitlines()
+    ]
+    lines = [l for l in raw_lines if l]
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.endswith(":") and not re.search(r"\d", line):
+            i += 1
             continue
+        if SKIP_INGR_LINE_RE.search(line) or SKIP_INGR_SIMPLE_RE.match(line):
+            i += 1
+            continue
+
+        if QTY_ONLY_RE.match(line) and i + 1 < len(lines):
+            nxt = lines[i + 1]
+            if not SKIP_INGR_LINE_RE.search(nxt) and not re.search(r"\d", nxt):
+                line = f"{line} {nxt}"
+                i += 1
+
         line = normalize_qty_line(line)
         if VERB_RE.search(line):
-            invalid.append(line); continue
+            invalid.append(line)
+            i += 1
+            continue
         m = ING_LINE_RE.match(line)
         if not m or not m.group("item"):
-            invalid.append(line); continue
+            invalid.append(line)
+            i += 1
+            continue
         valid.append(line)
+        i += 1
     return {"valid": valid, "invalid": invalid}
 
 # === NUTRITION ===
@@ -408,7 +498,11 @@ def main():
             notes = list(sections.get("notes", []))
 
             if parsed_ing["invalid"]:
-                notes.append("ingredients_invalid_lines")
+                if ingredients_list and steps_list:
+                    status = "PARTIAL"
+                    notes.append("partial_invalid_ingredients")
+                else:
+                    notes.append("ingredients_invalid_lines")
             if not ingredients_list:
                 notes.append("no_valid_ingredients")
                 status = "INCOMPLETE"
