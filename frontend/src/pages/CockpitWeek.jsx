@@ -141,16 +141,12 @@ function addDays(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
-function getMonday(dateStr) {
-  const d = new Date(dateStr + "T00:00:00");
-  const day = d.getDay(); // 0 = Sunday, 1 = Monday
-  const delta = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
-
-function getSundayFromMonday(mondayStr) {
-  return addDays(mondayStr, 6);
+function buildWeekIdFromRange(start, end) {
+  if (!start || !end) return "";
+  const [y1, m1, d1] = start.split("-");
+  const [y2, m2, d2] = end.split("-");
+  if (!y1 || !m1 || !d1 || !y2 || !m2 || !d2) return "";
+  return `${d1}-${m1}_to_${d2}-${m2}_${y1}`;
 }
 
 function formatDateFr(dateStr) {
@@ -430,10 +426,10 @@ export default function CockpitWeek() {
 
       await loadMenuProposals(w.week_id);
 
-      if (w?.date_start && w?.date_end && w?.week_id) {
-        setPrepWeekId(w.week_id);
+      if (w?.date_start && w?.date_end) {
         setPrepStart(w.date_start);
         setPrepEnd(w.date_end);
+        setPrepWeekId(buildWeekIdFromRange(w.date_start, w.date_end));
       }
     })();
   }, []);
@@ -469,30 +465,46 @@ export default function CockpitWeek() {
     setSelectedSlot(first);
     await loadMenuProposals(w.week_id);
 
-    if (w?.date_start && w?.date_end && w?.week_id) {
-      setPrepWeekId(w.week_id);
+    if (w?.date_start && w?.date_end) {
       setPrepStart(w.date_start);
       setPrepEnd(w.date_end);
+      setPrepWeekId(buildWeekIdFromRange(w.date_start, w.date_end));
     }
   }
 
   async function onPrepareWeek() {
-    await fetchJson("/api/weeks/prepare", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        week_id: prepWeekId,
-        date_start: prepStart,
-        date_end: prepEnd
-      })
-    });
+    if (!prepStart || !prepEnd) {
+      alert("Merci de renseigner une date de début et une date de fin.");
+      return;
+    }
+    const computedWeekId = buildWeekIdFromRange(prepStart, prepEnd);
+    if (!computedWeekId) {
+      alert("Impossible de calculer la référence de semaine.");
+      return;
+    }
+    try {
+      await fetchJson("/api/weeks/prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          week_id: computedWeekId,
+          date_start: prepStart,
+          date_end: prepEnd
+        })
+      });
+    } catch (e) {
+      const msg = String(e?.message || "");
+      if (msg.includes("week_exists")) {
+        alert("Semaine déjà existante — revoir les paramètres de création.");
+        return;
+      }
+      alert(`Préparation impossible: ${msg}`);
+      return;
+    }
     await loadWeeksList();
-    await onChangeWeek(prepWeekId);
-    await generateProposals(prepWeekId);
+    await onChangeWeek(computedWeekId);
 
-    setPrepWeekId("");
-    setPrepStart("");
-    setPrepEnd("");
+    setPrepWeekId(computedWeekId);
   }
 
   async function onPeopleChange(slot, adults, children) {
@@ -1005,10 +1017,10 @@ export default function CockpitWeek() {
           onChange={(e) => {
             const picked = e.target.value;
             if (!picked) return;
-            const monday = getMonday(picked);
-            setPrepStart(monday);
-            setPrepEnd(getSundayFromMonday(monday));
-            setPrepWeekId(getWeekId(monday));
+            setPrepStart(picked);
+            const end = addDays(picked, 6);
+            setPrepEnd(end);
+            setPrepWeekId(buildWeekIdFromRange(picked, end));
           }}
         />
         <input
@@ -1017,10 +1029,8 @@ export default function CockpitWeek() {
           onChange={(e) => {
             const picked = e.target.value;
             if (!picked) return;
-            const monday = getMonday(addDays(picked, -6));
-            setPrepStart(monday);
-            setPrepEnd(getSundayFromMonday(monday));
-            setPrepWeekId(getWeekId(monday));
+            setPrepEnd(picked);
+            setPrepWeekId(buildWeekIdFromRange(prepStart, picked));
           }}
         />
 
