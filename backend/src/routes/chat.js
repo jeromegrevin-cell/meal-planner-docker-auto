@@ -333,6 +333,7 @@ router.post("/proposals/import", async (req, res) => {
     }
 
     const createdAt = nowIso();
+    const usedTitles = new Set();
 
     for (const [slotRaw, listRaw] of Object.entries(proposals)) {
       const slot = normalizeSlotKey(slotRaw);
@@ -471,13 +472,8 @@ router.post("/proposals/generate", async (req, res) => {
         data.menu_proposals[slot] = [];
       }
 
-      const existingTitles = new Set(
-        (data.menu_proposals[slot] || []).map((p) =>
-          String(p?.title || "").trim().toLowerCase()
-        )
-      );
       const titleKey = title.toLowerCase();
-      if (existingTitles.has(titleKey)) continue;
+      if (usedTitles.has(titleKey)) continue;
 
       data.menu_proposals[slot].push({
         proposal_id: newProposalId(),
@@ -488,6 +484,7 @@ router.post("/proposals/generate", async (req, res) => {
         to_save: false,
         created_at: createdAt
       });
+      usedTitles.add(titleKey);
     }
 
     // Fallback if model output didn't parse or created no proposals for some slots
@@ -501,7 +498,14 @@ router.post("/proposals/generate", async (req, res) => {
       if (localRecipes.length === 0) {
         return res.status(500).json({ error: "no_local_recipes" });
       }
-      const shuffled = shuffle(localRecipes);
+      const candidates = localRecipes.filter((r) => {
+        const key = String(r?.title || "").trim().toLowerCase();
+        return key && !usedTitles.has(key);
+      });
+      if (candidates.length === 0) {
+        return res.status(409).json({ error: "no_unique_recipes_left" });
+      }
+      const shuffled = shuffle(candidates);
       let idx = 0;
       for (const slot of slots) {
         const list = data.menu_proposals?.[slot] || [];
@@ -518,6 +522,7 @@ router.post("/proposals/generate", async (req, res) => {
           to_save: false,
           created_at: createdAt
         });
+        usedTitles.add(String(pick.title || "").trim().toLowerCase());
       }
     }
 
