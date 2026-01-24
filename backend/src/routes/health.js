@@ -2,10 +2,11 @@
 import express from "express";
 import { promises as fs } from "fs";
 import path from "path";
+import { DATA_DIR } from "../lib/dataPaths.js";
 
 const router = express.Router();
 
-const TARGET_DIRS = ["data/weeks", "data/recipes"];
+const TARGET_DIRS = [path.join(DATA_DIR, "weeks"), path.join(DATA_DIR, "recipes")];
 
 async function exists(p) {
   try {

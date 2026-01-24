@@ -2,19 +2,13 @@ import express from "express";
 import path from "path";
 import fs from "fs/promises";
 import fsSync from "fs";
+import { DATA_DIR } from "../lib/dataPaths.js";
 import OpenAI from "openai";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 
 const router = express.Router();
 
-const PROJECT_ROOT = process.cwd();
-const PRIMARY_DATA_DIR = path.join(PROJECT_ROOT, "data");
-const FALLBACK_DATA_DIR = path.join(PROJECT_ROOT, "backend", "data");
-const PRIMARY_HAS_DATA =
-  fsSync.existsSync(path.join(PRIMARY_DATA_DIR, "recipes")) ||
-  fsSync.existsSync(path.join(PRIMARY_DATA_DIR, "weeks")) ||
-  fsSync.existsSync(path.join(PRIMARY_DATA_DIR, "chat_sessions"));
-const DATA_DIR = PRIMARY_HAS_DATA ? PRIMARY_DATA_DIR : FALLBACK_DATA_DIR;
+const PROJECT_ROOT = path.resolve(DATA_DIR, "..", "..");
 const CHAT_DIR = path.join(DATA_DIR, "chat_sessions");
 const RECIPES_DIR = path.join(DATA_DIR, "recipes");
 const CHAT_PERSIST = process.env.CHAT_PERSIST !== "0";

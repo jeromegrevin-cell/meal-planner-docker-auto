@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs/promises";
 import { fileURLToPath } from "url";
 import { readJson, writeJson } from "../lib/jsonStore.js";
+import { DATA_DIR } from "../lib/dataPaths.js";
 import { validateRecipe } from "../lib/recipeValidation.js";
 
 const router = express.Router();
@@ -10,7 +11,7 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const RECIPES_DIR = path.join(__dirname, "../../data/recipes");
+const RECIPES_DIR = path.join(DATA_DIR, "recipes");
 const PDFS_DIR = path.join(__dirname, "../../pdfs");
 const ROOT_DIR = path.resolve(__dirname, "../../..");
 const DRIVE_INDEX = path.join(ROOT_DIR, "recettes_index.json");
@@ -142,14 +143,10 @@ async function saveRecipeJson({ title, source, people, preview }) {
   return recipe;
 }
 
-async function uploadPdfStub(recipe, pdfPath) {
-  // Stub: in real pipeline, upload to Drive and set real drive_path.
-  const drive_path = `drive://stub/${recipe.recipe_id}`;
-  recipe.source = { type: "DRIVE", drive_path };
-  recipe.status = "EXTERNE";
-  recipe.updated_at = nowIso();
-  await writeJson(recipePath(recipe.recipe_id), recipe);
-  return drive_path;
+async function uploadPdfStub() {
+  throw new Error(
+    "drive_upload_not_implemented: configure a Drive uploader to replace the stub"
+  );
 }
 
 function applyRecipePatch(recipe, patch) {
@@ -286,7 +283,11 @@ router.post("/upload", async (req, res) => {
     const drive_path = await uploadPdfStub(recipe, pdf_path);
     return res.json({ ok: true, recipe_id, drive_path });
   } catch (e) {
-    const status = e?.code === "ENOENT" ? 404 : 500;
+    const status = e?.code === "ENOENT"
+      ? 404
+      : String(e?.message || "").startsWith("drive_upload_not_implemented")
+        ? 501
+        : 500;
     return res.status(status).json({ error: "recipe_upload_failed", details: e.message });
   }
 });
@@ -325,7 +326,10 @@ router.post("/save-and-upload", async (req, res) => {
       drive_path
     });
   } catch (e) {
-    return res.status(500).json({ error: "recipe_save_upload_failed", details: e.message });
+    const status = String(e?.message || "").startsWith("drive_upload_not_implemented")
+      ? 501
+      : 500;
+    return res.status(status).json({ error: "recipe_save_upload_failed", details: e.message });
   }
 });
 

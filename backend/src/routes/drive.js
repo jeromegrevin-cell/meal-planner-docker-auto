@@ -4,10 +4,11 @@ import fs from "fs/promises";
 import { createWriteStream } from "fs";
 import { spawn } from "child_process";
 import { readJson, writeJson } from "../lib/jsonStore.js";
+import { DATA_DIR } from "../lib/dataPaths.js";
 
 const router = express.Router();
 
-const JOBS_DIR = path.join(process.cwd(), "data", "drive_jobs");
+const JOBS_DIR = path.join(DATA_DIR, "drive_jobs");
 const LOGS_DIR = path.join(JOBS_DIR, "logs");
 
 // On evite les rescans concurrents en memoire (suffisant en dev host)

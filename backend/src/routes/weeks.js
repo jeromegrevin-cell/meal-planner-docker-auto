@@ -2,11 +2,12 @@ import express from "express";
 import path from "path";
 import fs from "fs/promises";
 import { readJson, writeJson } from "../lib/jsonStore.js";
+import { DATA_DIR } from "../lib/dataPaths.js";
 
 const router = express.Router();
 
-const WEEKS_DIR = path.join(process.cwd(), "data", "weeks");
-const RECIPES_DIR = path.join(process.cwd(), "data", "recipes");
+const WEEKS_DIR = path.join(DATA_DIR, "weeks");
+const RECIPES_DIR = path.join(DATA_DIR, "recipes");
 
 function nowIso() {
   return new Date().toISOString();
@@ -41,21 +42,12 @@ async function safeReadJson(filePath) {
 }
 
 function isValidWeekId(weekId) {
-  // Format: DD-MM_to_DD-MM_YYYY (ex: 24-01_to_30-01_2026)
+  // Format: YYYY-WNN (ex: 2026-W01)
   if (typeof weekId !== "string") return false;
-  return /^\d{2}-\d{2}_to_\d{2}-\d{2}_\d{4}$/.test(weekId);
-}
-
-function buildWeekIdFromRange(dateStart, dateEnd) {
-  const [y1, m1, d1] = dateStart.split("-").map((v) => Number(v));
-  const [y2, m2, d2] = dateEnd.split("-").map((v) => Number(v));
-  if (!Number.isFinite(y1) || !Number.isFinite(m1) || !Number.isFinite(d1)) return "";
-  if (!Number.isFinite(y2) || !Number.isFinite(m2) || !Number.isFinite(d2)) return "";
-  const dd1 = String(d1).padStart(2, "0");
-  const mm1 = String(m1).padStart(2, "0");
-  const dd2 = String(d2).padStart(2, "0");
-  const mm2 = String(m2).padStart(2, "0");
-  return `${dd1}-${mm1}_to_${dd2}-${mm2}_${y1}`;
+  const m = weekId.match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return false;
+  const weekNum = Number(m[2]);
+  return Number.isInteger(weekNum) && weekNum >= 1 && weekNum <= 99;
 }
 
 function isISODate(d) {
@@ -244,6 +236,14 @@ router.post("/prepare", async (req, res) => {
     const dateStart = String(req.body?.date_start || "").trim();
     const dateEnd = String(req.body?.date_end || "").trim();
 
+    if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+    if (!isValidWeekId(weekId)) {
+      return res.status(400).json({
+        error: "invalid_week_id",
+        details: "Expected format YYYY-WNN (e.g., 2026-W01)"
+      });
+    }
+
     if (!dateStart || !dateEnd) {
       return res.status(400).json({
         error: "missing_dates",
@@ -263,24 +263,9 @@ router.post("/prepare", async (req, res) => {
       });
     }
 
-    const expectedWeekId = buildWeekIdFromRange(dateStart, dateEnd);
-    if (!expectedWeekId) {
-      return res.status(400).json({
-        error: "invalid_week_id",
-        details: "Unable to compute week_id from date range"
-      });
-    }
-    if (weekId && weekId !== expectedWeekId) {
-      return res.status(400).json({
-        error: "invalid_week_id",
-        details: `Expected week_id ${expectedWeekId}`
-      });
-    }
-
     await ensureDir(WEEKS_DIR);
 
-    const finalWeekId = expectedWeekId;
-    const p = path.join(WEEKS_DIR, `${finalWeekId}.json`);
+    const p = path.join(WEEKS_DIR, `${weekId}.json`);
 
     // Si existant (même si ancien): renvoyer (comportement identique)
     const existing = await safeReadJson(p);
@@ -290,7 +275,7 @@ router.post("/prepare", async (req, res) => {
 
     // IMPORTANT: slots vides, validated=false partout.
     const week = {
-      week_id: finalWeekId,
+      week_id: weekId,
       date_start: dateStart,
       date_end: dateEnd,
       timezone: "Europe/Paris",

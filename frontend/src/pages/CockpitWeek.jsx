@@ -141,12 +141,23 @@ function addDays(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
-function buildWeekIdFromRange(start, end) {
-  if (!start || !end) return "";
-  const [y1, m1, d1] = start.split("-");
-  const [y2, m2, d2] = end.split("-");
-  if (!y1 || !m1 || !d1 || !y2 || !m2 || !d2) return "";
-  return `${d1}-${m1}_to_${d2}-${m2}_${y1}`;
+function buildWeekIdForDates(start, weekIds) {
+  if (!start) return "";
+  const [yearRaw] = start.split("-");
+  const year = String(yearRaw || "").trim();
+  if (!/^\d{4}$/.test(year)) return "";
+
+  let max = 0;
+  const re = new RegExp(`^${year}-W(\\d{2})$`);
+  for (const id of weekIds || []) {
+    const m = String(id).match(re);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+
+  const next = String(max + 1).padStart(2, "0");
+  return `${year}-W${next}`;
 }
 
 function formatDateFr(dateStr) {
@@ -392,7 +403,7 @@ export default function CockpitWeek() {
         alert("Merci de renseigner une date de début et une date de fin.");
         return;
       }
-      const computedWeekId = buildWeekIdFromRange(prepStart, prepEnd);
+      const computedWeekId = buildWeekIdForDates(prepStart, weekIds);
       if (!computedWeekId) {
         alert("Impossible de calculer la référence de semaine.");
         return;
@@ -460,7 +471,7 @@ export default function CockpitWeek() {
       if (w?.date_start && w?.date_end) {
         setPrepStart(w.date_start);
         setPrepEnd(w.date_end);
-        setPrepWeekId(buildWeekIdFromRange(w.date_start, w.date_end));
+        setPrepWeekId(w.week_id || "");
       }
     })();
   }, []);
@@ -499,7 +510,7 @@ export default function CockpitWeek() {
     if (w?.date_start && w?.date_end) {
       setPrepStart(w.date_start);
       setPrepEnd(w.date_end);
-      setPrepWeekId(buildWeekIdFromRange(w.date_start, w.date_end));
+      setPrepWeekId(w.week_id || "");
     }
   }
 
@@ -1070,7 +1081,7 @@ export default function CockpitWeek() {
                 setPrepStart(picked);
                 const end = addDays(picked, 6);
                 setPrepEnd(end);
-                setPrepWeekId(buildWeekIdFromRange(picked, end));
+            setPrepWeekId(buildWeekIdForDates(picked, weekIds));
               }}
             />
             <div style={{ fontSize: 12, opacity: 0.75 }}>Date de fin</div>
@@ -1081,7 +1092,7 @@ export default function CockpitWeek() {
                 const picked = e.target.value;
                 if (!picked) return;
                 setPrepEnd(picked);
-                setPrepWeekId(buildWeekIdFromRange(prepStart, picked));
+            setPrepWeekId(buildWeekIdForDates(prepStart, weekIds));
               }}
             />
             <div style={{ height: 32 }} />
@@ -1337,16 +1348,6 @@ export default function CockpitWeek() {
                                   e.stopPropagation();
                                   onValidateProposal(slot, p);
                                 }}
-                                style={{ padding: "4px 6px" }}
-                              />
-                              <IconButton
-                                icon="🔄"
-                                label="Proposer"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOtherProposal(slot);
-                                }}
-                                disabled={proposalLoading}
                                 style={{ padding: "4px 6px" }}
                               />
                               <IconButton
