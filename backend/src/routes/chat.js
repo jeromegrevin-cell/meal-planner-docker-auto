@@ -433,12 +433,28 @@ router.post("/proposals/generate", async (req, res) => {
     const sourceType = openai ? "CHAT_GENERATED" : "LOCAL_POOL";
 
     if (openai) {
-      const resp = await openai.responses.create({
-        model,
-        input: prompt
-      });
-      rawText = resp.output_text || "";
-      lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+      let attempts = 0;
+      while (attempts < 2) {
+        attempts += 1;
+        const resp = await openai.responses.create({
+          model,
+          input: prompt
+        });
+        rawText = resp.output_text || "";
+        lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+
+        const slotMatches = new Set();
+        for (const line of lines) {
+          const m = line.match(/^[-*]\s*([a-z_]+)\s*:\s*(.+)$/i);
+          if (!m) continue;
+          const slot = normalizeSlotKey(m[1]);
+          if (slots.includes(slot)) slotMatches.add(slot);
+        }
+
+        if (slotMatches.size === slots.length) break;
+        rawText = "";
+        lines = [];
+      }
     } else {
       const localRecipes = await listLocalRecipes();
       if (localRecipes.length === 0) {
