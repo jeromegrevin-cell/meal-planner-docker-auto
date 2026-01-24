@@ -1,12 +1,14 @@
 import express from "express";
 import path from "path";
 import fs from "fs/promises";
+import fsSync from "fs";
 import OpenAI from "openai";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 
 const router = express.Router();
 
 const CHAT_DIR = path.join(process.cwd(), "data", "chat_sessions");
+const RECIPES_DIR = path.join(process.cwd(), "data", "recipes");
 const CHAT_PERSIST = process.env.CHAT_PERSIST !== "0";
 const CHAT_RETENTION_DAYS = Number(process.env.CHAT_RETENTION_DAYS || 0);
 
@@ -14,8 +16,21 @@ const CHAT_RETENTION_DAYS = Number(process.env.CHAT_RETENTION_DAYS || 0);
 let cachedClient = null;
 let cachedKey = null;
 
+function readOpenAIKeyFromSecretsDir() {
+  const secretsDir = (process.env.MEAL_PLANNER_SECRETS_DIR || "").trim();
+  if (!secretsDir) return "";
+  const keyPath = path.join(secretsDir, "openai_api_key.txt");
+  if (!fsSync.existsSync(keyPath)) return "";
+  try {
+    const raw = fsSync.readFileSync(keyPath, "utf8");
+    return String(raw || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 function getOpenAIClient() {
-  const key = process.env.OPENAI_API_KEY;
+  const key = (process.env.OPENAI_API_KEY || "").trim() || readOpenAIKeyFromSecretsDir();
   if (!key) return null;
 
   if (!cachedClient || cachedKey !== key) {
@@ -36,6 +51,38 @@ function nowIso() {
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
+}
+
+async function listLocalRecipes() {
+  await ensureDir(RECIPES_DIR);
+  const files = await fs.readdir(RECIPES_DIR);
+  const jsonFiles = files.filter((f) => f.endsWith(".json"));
+  const recipes = [];
+  for (const f of jsonFiles) {
+    try {
+      const p = path.join(RECIPES_DIR, f);
+      const r = await readJson(p);
+      if (!r || typeof r !== "object") continue;
+      const title = String(r.title || "").trim();
+      if (!title || title.toLowerCase().includes("placeholder")) continue;
+      recipes.push({
+        recipe_id: r.recipe_id || f.replace(".json", ""),
+        title
+      });
+    } catch {
+      // ignore unreadable recipes
+    }
+  }
+  return recipes;
+}
+
+function shuffle(arr) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 async function pruneChatSessions() {
@@ -343,10 +390,6 @@ router.post("/proposals/generate", async (req, res) => {
     }
 
     const openai = getOpenAIClient();
-    if (!openai) {
-      return res.status(500).json({ error: "openai_not_configured" });
-    }
-
     const model = getModel();
 
     const previousTitlesBySlot = {};
@@ -383,13 +426,32 @@ router.post("/proposals/generate", async (req, res) => {
       "Aucun texte en plus."
     ].join("\n");
 
-    const resp = await openai.responses.create({
-      model,
-      input: prompt
-    });
+    let rawText = "";
+    let lines = [];
+    let fallbackRecipeBySlot = null;
+    const sourceType = openai ? "CHAT_GENERATED" : "LOCAL_POOL";
 
-    const rawText = resp.output_text || "";
-    const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (openai) {
+      const resp = await openai.responses.create({
+        model,
+        input: prompt
+      });
+      rawText = resp.output_text || "";
+      lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+    } else {
+      const localRecipes = await listLocalRecipes();
+      if (localRecipes.length === 0) {
+        return res.status(500).json({ error: "no_local_recipes" });
+      }
+      const shuffled = shuffle(localRecipes);
+      fallbackRecipeBySlot = {};
+      for (let i = 0; i < slots.length; i += 1) {
+        const slot = slots[i];
+        const pick = shuffled[i % shuffled.length];
+        fallbackRecipeBySlot[slot] = pick.recipe_id;
+        lines.push(`- ${slot}: ${pick.title}`);
+      }
+    }
 
     const createdAt = nowIso();
 
@@ -420,11 +482,43 @@ router.post("/proposals/generate", async (req, res) => {
       data.menu_proposals[slot].push({
         proposal_id: newProposalId(),
         title,
-        source: "CHAT_GENERATED",
+        recipe_id: fallbackRecipeBySlot?.[slot] || null,
+        source: sourceType,
         status: "PROPOSED",
         to_save: false,
         created_at: createdAt
       });
+    }
+
+    // Fallback if model output didn't parse or created no proposals for some slots
+    const needsFallback = slots.some((slot) => {
+      const list = data.menu_proposals?.[slot] || [];
+      return list.length === 0;
+    });
+
+    if (needsFallback) {
+      const localRecipes = await listLocalRecipes();
+      if (localRecipes.length === 0) {
+        return res.status(500).json({ error: "no_local_recipes" });
+      }
+      const shuffled = shuffle(localRecipes);
+      let idx = 0;
+      for (const slot of slots) {
+        const list = data.menu_proposals?.[slot] || [];
+        if (list.length > 0) continue;
+        const pick = shuffled[idx % shuffled.length];
+        idx += 1;
+        if (!data.menu_proposals[slot]) data.menu_proposals[slot] = [];
+        data.menu_proposals[slot].push({
+          proposal_id: newProposalId(),
+          title: pick.title,
+          recipe_id: pick.recipe_id,
+          source: "LOCAL_FALLBACK",
+          status: "PROPOSED",
+          to_save: false,
+          created_at: createdAt
+        });
+      }
     }
 
     data.updated_at = nowIso();
