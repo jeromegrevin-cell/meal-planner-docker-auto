@@ -2,13 +2,12 @@ import express from "express";
 import path from "path";
 import fs from "fs/promises";
 import fsSync from "fs";
-import { DATA_DIR } from "../lib/dataPaths.js";
+import { DATA_DIR, PROJECT_ROOT } from "../lib/dataPaths.js";
 import OpenAI from "openai";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 
 const router = express.Router();
 
-const PROJECT_ROOT = path.resolve(DATA_DIR, "..", "..");
 const CHAT_DIR = path.join(DATA_DIR, "chat_sessions");
 const RECIPES_DIR = path.join(DATA_DIR, "recipes");
 const CHAT_PERSIST = process.env.CHAT_PERSIST !== "0";

@@ -206,6 +206,43 @@ router.get("/list", async (_req, res) => {
 });
 
 /**
+ * GET /api/weeks/by-dates?date_start=YYYY-MM-DD&date_end=YYYY-MM-DD
+ * Returns the week matching the exact date range if it exists.
+ */
+router.get("/by-dates", async (req, res) => {
+  try {
+    const dateStart = String(req.query?.date_start || "").trim();
+    const dateEnd = String(req.query?.date_end || "").trim();
+
+    if (!dateStart || !dateEnd) {
+      return res.status(400).json({
+        error: "missing_dates",
+        details: "date_start and date_end are required (YYYY-MM-DD)"
+      });
+    }
+    if (!isISODate(dateStart) || !isISODate(dateEnd)) {
+      return res.status(400).json({
+        error: "invalid_dates",
+        details: "Expected ISO dates YYYY-MM-DD (valid calendar dates)"
+      });
+    }
+
+    const files = await listWeekFiles();
+    for (const f of files) {
+      const id = f.replace(".json", "");
+      const w = await loadWeek(id);
+      if (w?.date_start === dateStart && w?.date_end === dateEnd) {
+        return res.json(w);
+      }
+    }
+
+    return res.status(404).json({ error: "week_not_found" });
+  } catch (e) {
+    return res.status(500).json({ error: "week_by_dates_failed", details: e.message });
+  }
+});
+
+/**
  * GET /api/weeks/current
  * Choix simple: la semaine "la plus recente" par tri des noms de fichiers.
  */

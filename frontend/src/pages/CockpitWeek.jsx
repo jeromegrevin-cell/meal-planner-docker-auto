@@ -403,27 +403,42 @@ export default function CockpitWeek() {
         alert("Merci de renseigner une date de début et une date de fin.");
         return;
       }
-      const computedWeekId = buildWeekIdForDates(prepStart, weekIds);
+      let computedWeekId = buildWeekIdForDates(prepStart, weekIds);
       if (!computedWeekId) {
         alert("Impossible de calculer la référence de semaine.");
         return;
       }
 
       try {
-        await fetchJson("/api/weeks/prepare", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            week_id: computedWeekId,
-            date_start: prepStart,
-            date_end: prepEnd
-          })
-        });
+        const existing = await fetchJson(
+          `/api/weeks/by-dates?date_start=${encodeURIComponent(
+            prepStart
+          )}&date_end=${encodeURIComponent(prepEnd)}`
+        );
+        if (existing?.week_id) {
+          computedWeekId = existing.week_id;
+        }
       } catch (e) {
-        const msg = String(e?.message || "");
-        if (!msg.includes("week_exists")) {
-          alert(`Préparation impossible: ${msg}`);
-          return;
+        // ignore if not found
+      }
+
+      if (!weekIds.includes(computedWeekId)) {
+        try {
+          await fetchJson("/api/weeks/prepare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              week_id: computedWeekId,
+              date_start: prepStart,
+              date_end: prepEnd
+            })
+          });
+        } catch (e) {
+          const msg = String(e?.message || "");
+          if (!msg.includes("week_exists")) {
+            alert(`Préparation impossible: ${msg}`);
+            return;
+          }
         }
       }
 
