@@ -430,12 +430,21 @@ export default function CockpitWeek() {
       await loadWeeksList();
       await onChangeWeek(computedWeekId);
 
+      const weekSlots = week?.slots || {};
+      const slotsToGenerate = PROPOSAL_SLOTS.filter(
+        (slot) => !(weekSlots[slot]?.validated === true)
+      );
+      if (slotsToGenerate.length === 0) {
+        alert("Toutes les propositions sont déjà validées.");
+        return;
+      }
+
       await fetchJson("/api/chat/proposals/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           week_id: computedWeekId,
-          slots: PROPOSAL_SLOTS,
+          slots: slotsToGenerate,
           overwrite: true
         })
       });
