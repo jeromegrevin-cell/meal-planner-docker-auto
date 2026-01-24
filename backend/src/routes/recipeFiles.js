@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 import { DATA_DIR } from "../lib/dataPaths.js";
 import { validateRecipe } from "../lib/recipeValidation.js";
+import { updateLastUpload } from "../lib/driveState.js";
 
 const router = express.Router();
 
@@ -281,6 +282,7 @@ router.post("/upload", async (req, res) => {
 
     const pdf_path = String(req.body?.pdf_path || path.join(PDFS_DIR, `${recipe_id}.pdf`));
     const drive_path = await uploadPdfStub(recipe, pdf_path);
+    await updateLastUpload();
     return res.json({ ok: true, recipe_id, drive_path });
   } catch (e) {
     const status = e?.code === "ENOENT"
@@ -319,6 +321,7 @@ router.post("/save-and-upload", async (req, res) => {
     }
     const pdf_path = await generatePdfStub(recipe.recipe_id, recipe.title);
     const drive_path = await uploadPdfStub(recipe, pdf_path);
+    await updateLastUpload();
     return res.json({
       ok: true,
       recipe_id: recipe.recipe_id,

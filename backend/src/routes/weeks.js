@@ -386,7 +386,7 @@ router.patch("/:week_id/slots/init-validation", async (req, res) => {
 
 /**
  * PATCH /api/weeks/:week_id/slots/:slot
- * body: { recipe_id?: string|null, free_text?: string|null }
+ * body: { recipe_id?: string|null, free_text?: string|null, source_type?: string|null }
  * - Permet "Valider" une proposition (recipe_id et/ou free_text)
  * - Stocke free_text dans week.slots[slot].free_text
  * - Met week.slots[slot].validated = true si (recipe_id ou free_text non vide), sinon false
@@ -415,6 +415,7 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
     const validatedRaw = req.body?.validated;
     const previewRaw = req.body?.preview;
     const previewSigRaw = req.body?.preview_people_signature;
+    const sourceTypeRaw = req.body?.source_type;
 
     // recipe_id: string | null | undefined
     let recipe_id = undefined;
@@ -480,6 +481,14 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
         delete week.slots[slot].preview_people_signature;
       } else {
         week.slots[slot].preview_people_signature = String(previewSigRaw);
+      }
+    }
+
+    if (sourceTypeRaw !== undefined) {
+      if (sourceTypeRaw === null) {
+        delete week.slots[slot].source_type;
+      } else {
+        week.slots[slot].source_type = String(sourceTypeRaw).trim();
       }
     }
 

@@ -152,6 +152,8 @@ export default function Home() {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState(null);
   const [constraintsOpen, setConstraintsOpen] = useState(false);
+  const [rescanRequired, setRescanRequired] = useState(false);
+  const [rescanStatus, setRescanStatus] = useState(null);
   const [calendarMaxHeight, setCalendarMaxHeight] = useState(() => {
     if (typeof window === "undefined") return 440;
     const h = Math.round(window.innerHeight * 0.6);
@@ -172,6 +174,19 @@ export default function Home() {
     }
 
     loadWeeks().catch(() => setWeeks({}));
+  }, []);
+
+  useEffect(() => {
+    async function loadRescanStatus() {
+      try {
+        const status = await fetchJson("/api/drive/rescan/status");
+        setRescanStatus(status);
+        setRescanRequired(Boolean(status?.rescan_required));
+      } catch {
+        setRescanRequired(false);
+      }
+    }
+    loadRescanStatus();
   }, []);
 
   useEffect(() => {
@@ -322,6 +337,9 @@ export default function Home() {
   async function onRescanDrive() {
     try {
       await fetchJson("/api/drive/rescan", { method: "POST" });
+      const status = await fetchJson("/api/drive/rescan/status");
+      setRescanStatus(status);
+      setRescanRequired(Boolean(status?.rescan_required));
     } catch (e) {
       alert(`Rescan Drive failed: ${e.message}`);
     }
@@ -349,7 +367,6 @@ export default function Home() {
         />
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button onClick={onRescanDrive}>Rescan recettes</button>
           <button onClick={() => setConstraintsOpen(true)}>Contraintes</button>
           <button onClick={() => navigate("/weeks")}>Générer semaine</button>
         </div>
@@ -461,6 +478,12 @@ export default function Home() {
             );
           })}
         </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={onRescanDrive}>
+          Rescan recettes{rescanRequired ? " ⚠️" : ""}
+        </button>
       </div>
 
       {modal && (

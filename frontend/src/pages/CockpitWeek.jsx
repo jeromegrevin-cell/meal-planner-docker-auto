@@ -55,23 +55,14 @@ function DriveIcon({ size = 16 }) {
     <svg
       width={size}
       height={size}
-      viewBox="0 0 87.3 78"
+      viewBox="0 0 48 48"
       aria-hidden="true"
       focusable="false"
       style={{ display: "inline-block", verticalAlign: "middle" }}
     >
-      <path
-        d="M55.2 0H32.1L0 55.6l11.1 19.2 44.1-74.8z"
-        fill="#0F9D58"
-      />
-      <path
-        d="M87.3 55.6L55.2 0 11.1 74.8l.1.2h64.9l11.2-19.4z"
-        fill="#4285F4"
-      />
-      <path
-        d="M55.2 0L87.3 55.6H32.1L0 55.6 32.1 0h23.1z"
-        fill="#FFC107"
-      />
+      <path fill="#0F9D58" d="M16.5 6 3 29.5l3 5.2L22.5 6z" />
+      <path fill="#4285F4" d="M45 29.5 31.5 6 15 34.7l.3.6H41z" />
+      <path fill="#F4B400" d="M16.5 6h15L45 29.5H30z" />
     </svg>
   );
 }
@@ -608,6 +599,7 @@ export default function CockpitWeek() {
   async function onValidateProposal(slot, proposal) {
     const recipeId = proposal?.recipe_id ? String(proposal.recipe_id) : "";
     const title = String(proposal?.title || "").trim();
+    const sourceType = proposal?.source ? String(proposal.source) : null;
 
     const payload = recipeId
       ? { recipe_id: recipeId, free_text: null }
@@ -620,7 +612,10 @@ export default function CockpitWeek() {
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          ...payload,
+          source_type: sourceType
+        })
       }
     );
 
@@ -1176,7 +1171,11 @@ export default function CockpitWeek() {
                     const saved = !!savedRecipeIdsBySlot?.[slot];
                     const validatedRid = s?.recipe_id || null;
                     const validatedMeta = validatedRid ? recipeCache?.[validatedRid] : null;
-                    const validatedIsDrive = validatedMeta?.source?.type === "DRIVE";
+                    const validatedSourceType = s?.source_type || null;
+                    const validatedIsDrive =
+                      validatedMeta?.source?.type === "DRIVE" ||
+                      validatedSourceType === "DRIVE" ||
+                      validatedSourceType === "DRIVE_INDEX";
 
             return (
               <tr
@@ -1274,7 +1273,10 @@ export default function CockpitWeek() {
                       {(() => {
                         const rid = s?.recipe_id || null;
                         const meta = rid ? recipeCache?.[rid] : null;
-                        const isDrive = meta?.source?.type === "DRIVE";
+                        const isDrive =
+                          meta?.source?.type === "DRIVE" ||
+                          validatedSourceType === "DRIVE" ||
+                          validatedSourceType === "DRIVE_INDEX";
                         return !isDrive ? (
                           <IconButton
                             icon={saved ? "✅" : "💾"}
@@ -1359,7 +1361,9 @@ export default function CockpitWeek() {
                             >
                               <span style={{ flex: 1 }}>
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                  {p?.source === "DRIVE" ? <DriveIcon size={14} /> : null}
+                                  {p?.source === "DRIVE" || p?.source === "DRIVE_INDEX" ? (
+                                    <DriveIcon size={14} />
+                                  ) : null}
                                   {p.title}
                                 </span>
                                 {totalPeople ? ` · ${totalPeople} pers.` : ""}

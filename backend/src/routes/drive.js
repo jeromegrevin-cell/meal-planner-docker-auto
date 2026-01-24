@@ -5,6 +5,7 @@ import { createWriteStream } from "fs";
 import { spawn } from "child_process";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 import { DATA_DIR } from "../lib/dataPaths.js";
+import { readDriveState, updateLastRescan } from "../lib/driveState.js";
 
 const router = express.Router();
 
@@ -152,6 +153,16 @@ async function resolveCredentialsPath() {
 router.get("/rescan/status", async (_req, res) => {
   try {
     const latest = await getLatestJob();
+    const state = await readDriveState();
+    const lastUploadAt = state.last_upload_at ? Date.parse(state.last_upload_at) : null;
+    const lastRescanAt = state.last_rescan_at ? Date.parse(state.last_rescan_at) : null;
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const lastActionAt = Math.max(lastUploadAt || 0, lastRescanAt || 0);
+    const rescanRequired =
+      (lastUploadAt && (!lastRescanAt || lastUploadAt > lastRescanAt)) ||
+      (lastActionAt > 0 && now - lastActionAt > sevenDaysMs);
+
     if (latest?.status === "running" && latest?.started_at) {
       const startedAt = Date.parse(latest.started_at);
       if (!Number.isNaN(startedAt)) {
@@ -179,7 +190,10 @@ router.get("/rescan/status", async (_req, res) => {
     res.json({
       ok: true,
       latest: latest || null,
-      running_job_id: runningJobId
+      running_job_id: runningJobId,
+      last_upload_at: state.last_upload_at,
+      last_rescan_at: state.last_rescan_at,
+      rescan_required: rescanRequired
     });
   } catch (e) {
     res.status(500).json({
@@ -255,6 +269,7 @@ router.post("/rescan", async (_req, res) => {
     // Lancement async
     runningJobId = jobId;
     lastRescanAtMs = now;
+    await updateLastRescan();
 
     job.status = "running";
     job.started_at = nowIso();
