@@ -43,6 +43,7 @@ credentials/
 # --------------------
 backend/data/
 frontend/.vite/
+backend/data/chat_sessions/2026-W03.json
 
 # --------------------
 # Temporary / backup
