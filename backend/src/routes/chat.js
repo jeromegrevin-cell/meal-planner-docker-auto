@@ -651,9 +651,6 @@ router.post("/proposals/generate", async (req, res) => {
     });
 
     if (needsFallback) {
-      if (openaiAvailable) {
-        return res.status(409).json({ error: "not_enough_unique_ai" });
-      }
       const localRecipes = await listLocalRecipes();
       if (localRecipes.length === 0) {
         return res.status(500).json({ error: "no_local_recipes" });
