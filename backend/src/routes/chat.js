@@ -7,8 +7,16 @@ import { readJson, writeJson } from "../lib/jsonStore.js";
 
 const router = express.Router();
 
-const CHAT_DIR = path.join(process.cwd(), "data", "chat_sessions");
-const RECIPES_DIR = path.join(process.cwd(), "data", "recipes");
+const PROJECT_ROOT = process.cwd();
+const PRIMARY_DATA_DIR = path.join(PROJECT_ROOT, "data");
+const FALLBACK_DATA_DIR = path.join(PROJECT_ROOT, "backend", "data");
+const PRIMARY_HAS_DATA =
+  fsSync.existsSync(path.join(PRIMARY_DATA_DIR, "recipes")) ||
+  fsSync.existsSync(path.join(PRIMARY_DATA_DIR, "weeks")) ||
+  fsSync.existsSync(path.join(PRIMARY_DATA_DIR, "chat_sessions"));
+const DATA_DIR = PRIMARY_HAS_DATA ? PRIMARY_DATA_DIR : FALLBACK_DATA_DIR;
+const CHAT_DIR = path.join(DATA_DIR, "chat_sessions");
+const RECIPES_DIR = path.join(DATA_DIR, "recipes");
 const CHAT_PERSIST = process.env.CHAT_PERSIST !== "0";
 const CHAT_RETENTION_DAYS = Number(process.env.CHAT_RETENTION_DAYS || 0);
 
@@ -127,6 +135,50 @@ function normalizeSlotKey(slot) {
 
 function normalizeTitle(title) {
   return String(title || "").trim();
+}
+
+function parseProposalLines(lines, slots, existingTitles = null) {
+  const slotSet = new Set(slots);
+  const titles = new Set();
+  const map = new Map();
+
+  for (const line of lines) {
+    const m = line.match(/^[-*]\s*([a-z_]+)\s*:\s*(.+)$/i);
+    if (!m) continue;
+    const slot = normalizeSlotKey(m[1]);
+    const title = normalizeTitle(m[2]);
+    if (!slot || !title) continue;
+    if (!slotSet.has(slot)) continue;
+    if (map.has(slot)) continue;
+    const key = title.toLowerCase();
+    if (titles.has(key)) continue;
+    if (existingTitles && existingTitles.has(key)) continue;
+    map.set(slot, title);
+    titles.add(key);
+  }
+
+  return { map, titles };
+}
+
+function normalizeDriveTitle(raw) {
+  const t = String(raw || "").trim();
+  if (!t) return "";
+  return t.replace(/\.pdf$/i, "").trim();
+}
+
+async function listDriveIndexTitles() {
+  const csvPath = path.join(PROJECT_ROOT, "recipes_list.csv");
+  if (!fsSync.existsSync(csvPath)) return [];
+  const raw = fsSync.readFileSync(csvPath, "utf8");
+  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length <= 1) return [];
+  const titles = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const parts = lines[i].split(";");
+    const title = normalizeDriveTitle(parts[0] || "");
+    if (title) titles.push(title);
+  }
+  return titles;
 }
 
 function newProposalId() {
@@ -248,7 +300,7 @@ router.post("/current", async (req, res) => {
     let usage = null;
     let warning = null;
 
-    const openai = getOpenAIClient();
+    let openai = getOpenAIClient();
     const model = getModel();
 
     if (openai) {
@@ -393,6 +445,7 @@ router.post("/proposals/generate", async (req, res) => {
     const openai = getOpenAIClient();
     const model = getModel();
 
+    const slotsSet = new Set(slots);
     if (overwrite) {
       for (const slot of slots) {
         data.menu_proposals[slot] = [];
@@ -415,87 +468,147 @@ router.post("/proposals/generate", async (req, res) => {
       })
       .filter(Boolean);
 
-    const prompt = [
-      "Tu proposes des idées de plats pour un menu hebdomadaire (brouillon).",
-      "Règles PRIORITAIRES:",
-      "1) Format: une ligne par slot, format strict: '- slot: <titre>'.",
-      "2) Aucune recette/ingrédient/liste de courses avant validation du tableau.",
-      "3) Si ambiguïté/information manquante: STOP et réponds uniquement: 'QUESTION: ...'.",
-      "4) Personnes: 2 adultes + 1 enfant de 9 ans (adapter les portions, pas un x3 aveugle).",
-      "5) Nutrition: ~500 kcal/adulte, pas de menu vide.",
-      "6) Saison: légumes de saison, courgette interdite hors saison.",
-      "7) Équivalences cru/cuit: pâtes x2,5 ; riz x3 ; semoule x2 ; légumineuses x3 ; pommes de terre x1 ; patate douce x1.",
-      "8) Répétitions: ingrédient principal max 2 fois/semaine, si 2 fois -> 2 jours d’écart.",
-      "9) Sources: mixer recettes générées + Drive si possible; demander rescan si index Drive non à jour.",
-      "Donne un menu au format strict suivant (une ligne par slot):",
-      ...slots.map((s) => `- ${s}: <titre>`),
-      ...avoidLines,
-      "Aucun texte en plus."
-    ].join("\n");
+    const usedTitlesForPrompt = Array.from(
+      Object.entries(data.menu_proposals || {})
+        .filter(([slot]) => !slotsSet.has(slot))
+        .flatMap(([, list]) => list || [])
+        .map((p) => String(p?.title || "").trim())
+        .filter(Boolean)
+    );
+    const avoidGlobalLine =
+      usedTitlesForPrompt.length > 0
+        ? `Ne propose pas ces titres (déjà utilisés cette semaine): ${usedTitlesForPrompt.join(
+            " | "
+          )}`
+        : null;
 
     let rawText = "";
     let lines = [];
+    let parsedMap = null;
     let fallbackRecipeBySlot = null;
-    const sourceType = openai ? "CHAT_GENERATED" : "LOCAL_POOL";
+    let openaiAvailable = !!openai;
+    let sourceType = openaiAvailable ? "CHAT_GENERATED" : "LOCAL_POOL";
+    const sourceBySlot = {};
 
-    if (openai) {
-      let attempts = 0;
-      while (attempts < 2) {
-        attempts += 1;
-        const resp = await openai.responses.create({
-          model,
-          input: prompt
-        });
-        rawText = resp.output_text || "";
-        lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+    const usedTitlesForUniq = new Set(
+      Object.entries(data.menu_proposals || {})
+        .filter(([slot]) => (overwrite ? !slotsSet.has(slot) : true))
+        .flatMap(([, list]) => list || [])
+        .map((p) => String(p?.title || "").trim().toLowerCase())
+        .filter(Boolean)
+    );
 
-        const slotMatches = new Set();
-        for (const line of lines) {
-          const m = line.match(/^[-*]\s*([a-z_]+)\s*:\s*(.+)$/i);
-          if (!m) continue;
-          const slot = normalizeSlotKey(m[1]);
-          if (slots.includes(slot)) slotMatches.add(slot);
+    const driveTitles = await listDriveIndexTitles();
+    const driveCandidates = shuffle(
+      driveTitles.filter((t) => {
+        const key = t.toLowerCase();
+        return key && !usedTitlesForUniq.has(key);
+      })
+    );
+
+    if (driveCandidates.length > 0) {
+      const driveMap = new Map();
+      for (const slot of slots) {
+        if (driveCandidates.length === 0) break;
+        const title = driveCandidates.shift();
+        const key = title.toLowerCase();
+        if (usedTitlesForUniq.has(key)) continue;
+        driveMap.set(slot, title);
+        usedTitlesForUniq.add(key);
+        sourceBySlot[slot] = "DRIVE_INDEX";
+      }
+      if (driveMap.size > 0) {
+        parsedMap = driveMap;
+      }
+    }
+
+    if (openaiAvailable && parsedMap?.size !== slots.length) {
+      try {
+        let attempts = 0;
+        while (attempts < 3) {
+          attempts += 1;
+          const remainingSlots = slots.filter((s) => !parsedMap?.has(s));
+          const resp = await openai.responses.create({
+            model,
+            input: [
+              "Tu proposes des idées de plats pour un menu hebdomadaire (brouillon).",
+              "Règles PRIORITAIRES:",
+              "1) Format: une ligne par slot, format strict: '- slot: <titre>'.",
+              "2) Aucune recette/ingrédient/liste de courses avant validation du tableau.",
+              "3) Si ambiguïté/information manquante: STOP et réponds uniquement: 'QUESTION: ...'.",
+              "4) Personnes: 2 adultes + 1 enfant de 9 ans (adapter les portions, pas un x3 aveugle).",
+              "5) Nutrition: ~500 kcal/adulte, pas de menu vide.",
+              "6) Saison: légumes de saison, courgette interdite hors saison.",
+              "7) Équivalences cru/cuit: pâtes x2,5 ; riz x3 ; semoule x2 ; légumineuses x3 ; pommes de terre x1 ; patate douce x1.",
+              "8) Répétitions: ingrédient principal max 2 fois/semaine, si 2 fois -> 2 jours d’écart.",
+              "9) Sources: mixer recettes générées + Drive si possible; demander rescan si index Drive non à jour.",
+              "Donne un menu au format strict suivant (une ligne par slot):",
+              ...remainingSlots.map((s) => `- ${s}: <titre>`),
+              ...avoidLines,
+              ...(avoidGlobalLine ? [avoidGlobalLine] : []),
+              "Aucun texte en plus."
+            ].join("\n")
+          });
+          rawText = resp.output_text || "";
+          lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
+          const parsed = parseProposalLines(lines, remainingSlots, usedTitlesForUniq);
+          if (parsed.map.size === remainingSlots.length) {
+            parsedMap = parsedMap || new Map();
+            for (const [slot, title] of parsed.map.entries()) {
+              parsedMap.set(slot, title);
+              sourceBySlot[slot] = "CHAT_GENERATED";
+              usedTitlesForUniq.add(title.toLowerCase());
+            }
+            break;
+          }
+          rawText = "";
+          lines = [];
         }
-
-        if (slotMatches.size === slots.length) break;
+      } catch (_e) {
+        openaiAvailable = false;
+        openai = null;
+        sourceType = "LOCAL_POOL";
         rawText = "";
         lines = [];
       }
-    } else {
+    }
+
+    if (!openaiAvailable || !parsedMap || parsedMap.size !== slots.length) {
       const localRecipes = await listLocalRecipes();
       if (localRecipes.length === 0) {
         return res.status(500).json({ error: "no_local_recipes" });
       }
-      const shuffled = shuffle(localRecipes);
+      const candidates = shuffle(
+        localRecipes.filter((r) => {
+          const key = String(r?.title || "").trim().toLowerCase();
+          return key && !usedTitlesForUniq.has(key);
+        })
+      );
       fallbackRecipeBySlot = {};
-      for (let i = 0; i < slots.length; i += 1) {
-        const slot = slots[i];
-        const pick = shuffled[i % shuffled.length];
+      for (const slot of slots) {
+        if (parsedMap?.has(slot)) continue;
+        const pick = candidates.shift();
+        if (!pick) break;
         fallbackRecipeBySlot[slot] = pick.recipe_id;
-        lines.push(`- ${slot}: ${pick.title}`);
+        if (!parsedMap) parsedMap = new Map();
+        parsedMap.set(slot, pick.title);
+        sourceBySlot[slot] = "LOCAL_FALLBACK";
+        usedTitlesForUniq.add(String(pick.title || "").trim().toLowerCase());
       }
     }
 
     const createdAt = nowIso();
     const usedTitles = new Set(
-      overwrite
-        ? []
-        : Object.values(data.menu_proposals || {})
-            .flat()
-            .map((p) => String(p?.title || "").trim().toLowerCase())
-            .filter(Boolean)
+      Object.entries(data.menu_proposals || {})
+        .filter(([slot]) => (overwrite ? !slotsSet.has(slot) : true))
+        .flatMap(([, list]) => list || [])
+        .map((p) => String(p?.title || "").trim().toLowerCase())
+        .filter(Boolean)
     );
 
-    for (const line of lines) {
-      const m = line.match(/^[-*]\s*([a-z_]+)\s*:\s*(.+)$/i);
-      if (!m) continue;
-
-      const slot = normalizeSlotKey(m[1]);
-      const title = normalizeTitle(m[2]);
-      if (!slot || !title) continue;
-
-      if (!slots.includes(slot)) continue;
-
+    for (const slot of slots) {
+      const title = parsedMap?.get(slot);
+      if (!title) continue;
       if (!data.menu_proposals[slot]) {
         data.menu_proposals[slot] = [];
       }
@@ -507,12 +620,28 @@ router.post("/proposals/generate", async (req, res) => {
         proposal_id: newProposalId(),
         title,
         recipe_id: fallbackRecipeBySlot?.[slot] || null,
-        source: sourceType,
+        source: sourceBySlot[slot] || sourceType,
         status: "PROPOSED",
         to_save: false,
         created_at: createdAt
       });
       usedTitles.add(titleKey);
+    }
+
+    // Enforce zero-duplicate titles across all requested slots
+    const seenTitles = new Set();
+    for (const slot of slots) {
+      const list = Array.isArray(data.menu_proposals?.[slot])
+        ? data.menu_proposals[slot]
+        : [];
+      const unique = [];
+      for (const p of list) {
+        const key = String(p?.title || "").trim().toLowerCase();
+        if (!key || seenTitles.has(key)) continue;
+        seenTitles.add(key);
+        unique.push(p);
+      }
+      data.menu_proposals[slot] = unique;
     }
 
     // Fallback if model output didn't parse or created no proposals for some slots
@@ -522,13 +651,16 @@ router.post("/proposals/generate", async (req, res) => {
     });
 
     if (needsFallback) {
+      if (openaiAvailable) {
+        return res.status(409).json({ error: "not_enough_unique_ai" });
+      }
       const localRecipes = await listLocalRecipes();
       if (localRecipes.length === 0) {
         return res.status(500).json({ error: "no_local_recipes" });
       }
       const candidates = localRecipes.filter((r) => {
         const key = String(r?.title || "").trim().toLowerCase();
-        return key && !usedTitles.has(key);
+        return key && !usedTitles.has(key) && !seenTitles.has(key);
       });
       if (candidates.length === 0) {
         return res.status(409).json({ error: "no_unique_recipes_left" });
@@ -552,6 +684,26 @@ router.post("/proposals/generate", async (req, res) => {
         });
         usedTitles.add(String(pick.title || "").trim().toLowerCase());
       }
+    }
+
+    // Final global de-duplication across all slots (including existing ones)
+    const orderedSlots = [
+      ...slots,
+      ...Object.keys(data.menu_proposals || {}).filter((s) => !slotsSet.has(s))
+    ];
+    const seenGlobal = new Set();
+    for (const slot of orderedSlots) {
+      const list = Array.isArray(data.menu_proposals?.[slot])
+        ? data.menu_proposals[slot]
+        : [];
+      const unique = [];
+      for (const p of list) {
+        const key = String(p?.title || "").trim().toLowerCase();
+        if (!key || seenGlobal.has(key)) continue;
+        seenGlobal.add(key);
+        unique.push(p);
+      }
+      data.menu_proposals[slot] = unique;
     }
 
     data.updated_at = nowIso();
