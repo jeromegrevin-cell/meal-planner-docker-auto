@@ -393,6 +393,12 @@ router.post("/proposals/generate", async (req, res) => {
     const openai = getOpenAIClient();
     const model = getModel();
 
+    if (overwrite) {
+      for (const slot of slots) {
+        data.menu_proposals[slot] = [];
+      }
+    }
+
     const previousTitlesBySlot = {};
     for (const slot of slots) {
       const list = data.menu_proposals?.[slot] || [];
@@ -471,6 +477,14 @@ router.post("/proposals/generate", async (req, res) => {
     }
 
     const createdAt = nowIso();
+    const usedTitles = new Set(
+      overwrite
+        ? []
+        : Object.values(data.menu_proposals || {})
+            .flat()
+            .map((p) => String(p?.title || "").trim().toLowerCase())
+            .filter(Boolean)
+    );
 
     for (const line of lines) {
       const m = line.match(/^[-*]\s*([a-z_]+)\s*:\s*(.+)$/i);
@@ -482,9 +496,7 @@ router.post("/proposals/generate", async (req, res) => {
 
       if (!slots.includes(slot)) continue;
 
-      if (overwrite) {
-        data.menu_proposals[slot] = [];
-      } else if (!data.menu_proposals[slot]) {
+      if (!data.menu_proposals[slot]) {
         data.menu_proposals[slot] = [];
       }
 
