@@ -388,16 +388,47 @@ export default function CockpitWeek() {
 
   async function generateProposals(weekId) {
     try {
+      if (!prepStart || !prepEnd) {
+        alert("Merci de renseigner une date de début et une date de fin.");
+        return;
+      }
+      const computedWeekId = buildWeekIdFromRange(prepStart, prepEnd);
+      if (!computedWeekId) {
+        alert("Impossible de calculer la référence de semaine.");
+        return;
+      }
+
+      try {
+        await fetchJson("/api/weeks/prepare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            week_id: computedWeekId,
+            date_start: prepStart,
+            date_end: prepEnd
+          })
+        });
+      } catch (e) {
+        const msg = String(e?.message || "");
+        if (!msg.includes("week_exists")) {
+          alert(`Préparation impossible: ${msg}`);
+          return;
+        }
+      }
+
+      await loadWeeksList();
+      await onChangeWeek(computedWeekId);
+
       await fetchJson("/api/chat/proposals/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          week_id: weekId,
+          week_id: computedWeekId,
           slots: PROPOSAL_SLOTS,
           overwrite: true
         })
       });
-      await loadMenuProposals(weekId);
+      await loadMenuProposals(computedWeekId);
     } catch (e) {
       alert(`Propositions non generees: ${e.message}`);
     }
@@ -997,70 +1028,101 @@ export default function CockpitWeek() {
   // Render
   // --------------------
   return (
-    <div style={{ padding: 16 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <h2 style={{ margin: 0 }}>Cockpit semaine</h2>
+    <div style={{ display: "flex", gap: 16, padding: 16 }}>
+      <aside
+        style={{
+          width: 260,
+          flexShrink: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 18
+        }}
+      >
+        <section>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Semaine</div>
+          <select
+            style={{ width: "100%" }}
+            value={selectedWeekId}
+            onChange={(e) => onChangeWeek(e.target.value)}
+          >
+            {weekIds.map((id) => (
+              <option key={id}>{id}</option>
+            ))}
+          </select>
+        </section>
 
-        <select
-          value={selectedWeekId}
-          onChange={(e) => onChangeWeek(e.target.value)}
-        >
-          {weekIds.map((id) => (
-            <option key={id}>{id}</option>
-          ))}
-        </select>
+        <section>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Nouvelle semaine</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input
+              type="text"
+              placeholder="Week ID"
+              value={prepWeekId}
+              readOnly
+            />
+            <div style={{ fontSize: 12, opacity: 0.75 }}>Date de début</div>
+            <input
+              type="date"
+              value={prepStart}
+              onChange={(e) => {
+                const picked = e.target.value;
+                if (!picked) return;
+                setPrepStart(picked);
+                const end = addDays(picked, 6);
+                setPrepEnd(end);
+                setPrepWeekId(buildWeekIdFromRange(picked, end));
+              }}
+            />
+            <div style={{ fontSize: 12, opacity: 0.75 }}>Date de fin</div>
+            <input
+              type="date"
+              value={prepEnd}
+              onChange={(e) => {
+                const picked = e.target.value;
+                if (!picked) return;
+                setPrepEnd(picked);
+                setPrepWeekId(buildWeekIdFromRange(prepStart, picked));
+              }}
+            />
+            <div style={{ height: 32 }} />
+          </div>
+        </section>
 
-        <input type="text" placeholder="Week ID" value={prepWeekId} readOnly />
-        <input
-          type="date"
-          value={prepStart}
-          onChange={(e) => {
-            const picked = e.target.value;
-            if (!picked) return;
-            setPrepStart(picked);
-            const end = addDays(picked, 6);
-            setPrepEnd(end);
-            setPrepWeekId(buildWeekIdFromRange(picked, end));
-          }}
-        />
-        <input
-          type="date"
-          value={prepEnd}
-          onChange={(e) => {
-            const picked = e.target.value;
-            if (!picked) return;
-            setPrepEnd(picked);
-            setPrepWeekId(buildWeekIdFromRange(prepStart, picked));
-          }}
-        />
+        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button
+            onClick={() => generateProposals(week?.week_id)}
+            disabled={!week?.week_id}
+          >
+            Proposer menus
+          </button>
+        </section>
 
-        <button onClick={onPrepareWeek}>Préparer</button>
-        <button
-          onClick={() => generateProposals(week?.week_id)}
-          disabled={!week?.week_id}
-        >
-          Proposer menus
-        </button>
-        <IconButton
-          icon="☁️⬆️"
-          label="Upload sur Drive"
-          onClick={onUploadWeek}
-          disabled={!week?.week_id}
-        />
-        {pendingUploadCount > 0 ? (
-          <span style={{ fontSize: 12, opacity: 0.8 }}>
-            {pendingUploadCount}
-          </span>
-        ) : null}
-      </div>
+        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontWeight: 700 }}>Sauvegarder sur Drive</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <IconButton
+              icon="☁️⬆️"
+              label="Upload sur Drive"
+              onClick={onUploadWeek}
+              disabled={!week?.week_id}
+            />
+            {pendingUploadCount > 0 ? (
+              <span style={{ fontSize: 12, opacity: 0.8 }}>
+                {pendingUploadCount}
+              </span>
+            ) : null}
+          </div>
+        </section>
+      </aside>
 
-      {week?.date_start && week?.date_end && (
-        <div style={{ marginTop: 8, opacity: 0.8 }}>
-          Semaine du {formatDateFr(week.date_start)} au {formatDateFr(week.date_end)}
-        </div>
-      )}
+      <main style={{ flex: 1, minWidth: 0 }}>
+        {week?.date_start && week?.date_end && (
+          <h2 style={{ margin: "0 0 8px 0" }}>
+            Semaine du {formatDateFr(week.date_start)} au {formatDateFr(week.date_end)}
+          </h2>
+        )}
 
-      <table style={{ width: "100%", marginTop: 16, borderCollapse: "collapse" }}>
+        <table style={{ width: "100%", marginTop: 8, borderCollapse: "collapse" }}>
         <tbody>
           {tableRows.map(([slot, s]) => {
             const isSelected = selectedSlot === slot;
@@ -1321,6 +1383,7 @@ export default function CockpitWeek() {
           })}
         </tbody>
       </table>
+      </main>
 
       {proposalModal && (
         <div
