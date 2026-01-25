@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import IconButton from "../components/IconButton.jsx";
 
 const WEEKDAYS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
@@ -176,18 +176,27 @@ export default function Home() {
     loadWeeks().catch(() => setWeeks({}));
   }, []);
 
-  useEffect(() => {
-    async function loadRescanStatus() {
-      try {
-        const status = await fetchJson("/api/drive/rescan/status");
-        setRescanStatus(status);
-        setRescanRequired(Boolean(status?.rescan_required));
-      } catch {
-        setRescanRequired(false);
-      }
+  const loadRescanStatus = useCallback(async (opts = {}) => {
+    try {
+      const status = await fetchJson("/api/drive/rescan/status");
+      setRescanStatus(status);
+      setRescanRequired(Boolean(status?.rescan_required));
+    } catch {
+      if (!opts.silent) setRescanRequired(false);
     }
-    loadRescanStatus();
   }, []);
+
+  useEffect(() => {
+    loadRescanStatus({ silent: true });
+  }, [loadRescanStatus]);
+
+  useEffect(() => {
+    if (rescanStatus?.latest?.status !== "running") return;
+    const id = window.setInterval(() => {
+      loadRescanStatus({ silent: true });
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [loadRescanStatus, rescanStatus?.latest?.status]);
 
   useEffect(() => {
     function onResize() {
@@ -337,9 +346,7 @@ export default function Home() {
   async function onRescanDrive() {
     try {
       await fetchJson("/api/drive/rescan", { method: "POST" });
-      const status = await fetchJson("/api/drive/rescan/status");
-      setRescanStatus(status);
-      setRescanRequired(Boolean(status?.rescan_required));
+      await loadRescanStatus({ silent: true });
     } catch (e) {
       alert(`Rescan Drive failed: ${e.message}`);
     }
@@ -481,9 +488,17 @@ export default function Home() {
       </div>
 
       <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
-        <button onClick={onRescanDrive}>
-          Rescan recettes{rescanRequired ? " ⚠️" : ""}
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+          <button onClick={onRescanDrive}>
+            Rescan recettes{rescanRequired ? " ⚠️" : ""}
+          </button>
+          {rescanStatus?.progress?.total ? (
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              {rescanStatus?.latest?.status === "running" ? "Rescan en cours" : "Dernier rescan"} :{" "}
+              {rescanStatus.progress.scanned}/{rescanStatus.progress.total}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {modal && (
