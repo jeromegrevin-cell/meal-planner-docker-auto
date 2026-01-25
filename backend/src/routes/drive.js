@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
 import { spawn } from "child_process";
+import os from "os";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 import { DATA_DIR } from "../lib/dataPaths.js";
 import { readDriveState, updateLastRescan } from "../lib/driveState.js";
@@ -143,7 +144,42 @@ async function resolveCredentialsPath() {
     if (await fileExists(p)) return p;
   }
 
+  const fallbackDir = path.join(os.homedir(), "meal-planner-secrets");
+  const fallbackPath = path.join(
+    fallbackDir,
+    "service_accounts",
+    "chatgpt-recettes-access.json"
+  );
+  if (await fileExists(fallbackPath)) return fallbackPath;
+
   return null;
+}
+
+async function readRescanProgress(logPath) {
+  if (!logPath) return null;
+  try {
+    const raw = await fs.readFile(logPath, "utf8");
+    const tail = raw.slice(-20000);
+    const re = /\[(\d+)\/(\d+)\]/g;
+    let m;
+    let last = null;
+    while ((m = re.exec(tail))) {
+      last = { scanned: Number(m[1]), total: Number(m[2]) };
+    }
+    return last;
+  } catch {
+    return null;
+  }
+}
+
+function isProcessAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -153,6 +189,29 @@ async function resolveCredentialsPath() {
 router.get("/rescan/status", async (_req, res) => {
   try {
     const latest = await getLatestJob();
+    if (latest?.status === "running" && latest?.pid && !isProcessAlive(latest.pid)) {
+      const patched = await finalizeJob(
+        latest.job_id,
+        (j) => ({
+          ...j,
+          status: "failed",
+          finished_at: nowIso(),
+          exit_code: null,
+          error: "process_not_running"
+        }),
+        latest
+      );
+      return res.json({
+        ok: true,
+        latest: patched,
+        running_job_id: null,
+        last_upload_at: (await readDriveState()).last_upload_at,
+        last_rescan_at: (await readDriveState()).last_rescan_at,
+        rescan_required: false,
+        progress: null
+      });
+    }
+    const progress = await readRescanProgress(latest?.log_path);
     const state = await readDriveState();
     const lastUploadAt = state.last_upload_at ? Date.parse(state.last_upload_at) : null;
     const lastRescanAt = state.last_rescan_at ? Date.parse(state.last_rescan_at) : null;
@@ -193,7 +252,8 @@ router.get("/rescan/status", async (_req, res) => {
       running_job_id: runningJobId,
       last_upload_at: state.last_upload_at,
       last_rescan_at: state.last_rescan_at,
-      rescan_required: rescanRequired
+      rescan_required: rescanRequired,
+      progress
     });
   } catch (e) {
     res.status(500).json({
@@ -276,12 +336,35 @@ router.post("/rescan", async (_req, res) => {
     await writeJson(jobPath(jobId), job);
 
     const out = createWriteStream(logFile, { flags: "a" });
+    const logLine = (line) => {
+      try {
+        out.write(`${line}\n`);
+      } catch (_e) {}
+    };
+    logLine(`[${nowIso()}] rescan_start`);
 
     const projectRoot = path.join(process.cwd(), ".."); // backend/ -> racine
     const env = { ...process.env };
     env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+    if (!env.MEAL_PLANNER_SECRETS_DIR && credentialsPath) {
+      const secretsDir = path.dirname(path.dirname(credentialsPath));
+      env.MEAL_PLANNER_SECRETS_DIR = secretsDir;
+    }
 
-    const child = spawn(pythonBin, [scriptPath], {
+    // Force unbuffered output so logs + progress are visible in real time.
+    env.PYTHONUNBUFFERED = "1";
+    const command = `${pythonBin} -u "${scriptPath}"`;
+    logLine(`command=${command}`);
+    logLine(`cwd=${projectRoot}`);
+    logLine(`pythonBin=${pythonBin}`);
+    logLine(`scriptPath=${scriptPath}`);
+    logLine(
+      `GOOGLE_APPLICATION_CREDENTIALS=${env.GOOGLE_APPLICATION_CREDENTIALS || "unset"}`
+    );
+    logLine(
+      `MEAL_PLANNER_SECRETS_DIR=${env.MEAL_PLANNER_SECRETS_DIR || "unset"}`
+    );
+    const child = spawn("bash", ["-lc", command], {
       cwd: projectRoot,
       env
     });
@@ -313,6 +396,9 @@ router.post("/rescan", async (_req, res) => {
 
     child.on("error", async (err) => {
       clearTimeout(timeout);
+      try {
+        out.write(`spawn_error:${err.message}\n`);
+      } catch (_e) {}
       await finalizeOnce((j) => ({
         ...j,
         status: "failed",
@@ -324,6 +410,9 @@ router.post("/rescan", async (_req, res) => {
 
     child.on("close", async (code) => {
       clearTimeout(timeout);
+      try {
+        out.write(`exit_code:${code}\n`);
+      } catch (_e) {}
       await finalizeOnce((j) => ({
         ...j,
         finished_at: nowIso(),

@@ -1,0 +1,6 @@
+{
+  "ignore": [
+    "data/drive_jobs/**",
+    "data/chat_sessions/**"
+  ]
+}

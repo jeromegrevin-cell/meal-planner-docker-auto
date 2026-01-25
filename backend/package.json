@@ -13,7 +13,7 @@
     "start": "node src/index.js",
 
     "predev": "node scripts/check-json.js",
-    "dev": "nodemon --legacy-watch src/index.js"
+    "dev": "nodemon --legacy-watch --ignore data/drive_jobs/** --ignore data/chat_sessions/** src/index.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
