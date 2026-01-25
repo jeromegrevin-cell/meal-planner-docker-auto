@@ -134,6 +134,16 @@ function slotPrefixFromDate(d) {
   return map[d.getDay()];
 }
 
+function formatDateTime(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "short",
+    timeStyle: "short"
+  }).format(d);
+}
+
 function totalPeopleFromSlot(slotData) {
   if (!slotData?.people) return 0;
   const adults = Number.isFinite(slotData.people.adults) ? slotData.people.adults : 0;
@@ -496,6 +506,11 @@ export default function Home() {
             <div style={{ fontSize: 12, opacity: 0.75 }}>
               {rescanStatus?.latest?.status === "running" ? "Rescan en cours" : "Dernier rescan"} :{" "}
               {rescanStatus.progress.scanned}/{rescanStatus.progress.total}
+            </div>
+          ) : null}
+          {formatDateTime(rescanStatus?.last_rescan_at) ? (
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              Dernier rescan : {formatDateTime(rescanStatus?.last_rescan_at)}
             </div>
           ) : null}
         </div>
