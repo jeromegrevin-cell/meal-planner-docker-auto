@@ -1364,9 +1364,11 @@ export default function CockpitWeek() {
                                   {p?.source === "DRIVE" || p?.source === "DRIVE_INDEX" ? (
                                     <DriveIcon size={14} />
                                   ) : null}
-                                  {p.title}
+                                  <span>
+                                    {p.title}
+                                    {totalPeople ? ` · ${totalPeople} pers.` : ""}
+                                  </span>
                                 </span>
-                                {totalPeople ? ` · ${totalPeople} pers.` : ""}
                               </span>
 
                               <IconButton

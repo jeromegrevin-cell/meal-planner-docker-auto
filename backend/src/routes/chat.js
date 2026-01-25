@@ -443,9 +443,9 @@ router.post("/proposals/import", async (req, res) => {
  * body: { week_id, slots, overwrite }
  */
 router.post("/proposals/generate", async (req, res) => {
-  const weekId = String(req.body?.week_id || "");
-  const slots = Array.isArray(req.body?.slots) ? req.body.slots : [];
-  const overwrite = !!req.body?.overwrite;
+    const weekId = String(req.body?.week_id || "");
+    const slots = Array.isArray(req.body?.slots) ? req.body.slots : [];
+    const overwrite = !!req.body?.overwrite;
 
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
   if (slots.length === 0) {
@@ -462,22 +462,32 @@ router.post("/proposals/generate", async (req, res) => {
     const openai = getOpenAIClient();
     const model = getModel();
 
-    const slotsSet = new Set(slots);
+    const slotsSet = new Set(filteredSlots);
+    const weekData = await readJson(path.join(DATA_DIR, "weeks", `${weekId}.json`)).catch(
+      () => null
+    );
+    const noLunchSlots = new Set(
+      weekData?.rules_readonly?.no_lunch_slots || ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"]
+    );
+    const filteredSlots = slots.filter((s) => !noLunchSlots.has(s));
+    if (filteredSlots.length === 0) {
+      return res.status(400).json({ error: "no_eligible_slots" });
+    }
     if (overwrite) {
-      for (const slot of slots) {
+      for (const slot of filteredSlots) {
         nextData.menu_proposals[slot] = [];
       }
     }
 
     const previousTitlesBySlot = {};
-    for (const slot of slots) {
+    for (const slot of filteredSlots) {
       const list = nextData.menu_proposals?.[slot] || [];
       previousTitlesBySlot[slot] = list
         .map((p) => String(p?.title || "").trim())
         .filter(Boolean);
     }
 
-    const avoidLines = slots
+    const avoidLines = filteredSlots
       .map((s) => {
         const titles = previousTitlesBySlot[s] || [];
         if (titles.length === 0) return null;
@@ -530,7 +540,7 @@ router.post("/proposals/generate", async (req, res) => {
       })
     );
 
-    const slotCount = slots.length;
+    const slotCount = filteredSlots.length;
     const minAI = Math.ceil(slotCount * 0.5);
     const maxAI = Math.floor(slotCount * 0.66);
     const minDrive = slotCount - maxAI;
@@ -540,8 +550,8 @@ router.post("/proposals/generate", async (req, res) => {
 
     if (driveCandidates.length > 0 && driveSlotsCount > 0) {
       const driveMap = new Map();
-      const driveSlots = new Set(shuffle(slots).slice(0, driveSlotsCount));
-      for (const slot of slots) {
+      const driveSlots = new Set(shuffle(filteredSlots).slice(0, driveSlotsCount));
+      for (const slot of filteredSlots) {
         if (!driveSlots.has(slot)) continue;
         if (driveCandidates.length === 0) break;
         const title = driveCandidates.shift();
@@ -559,17 +569,17 @@ router.post("/proposals/generate", async (req, res) => {
       }
     }
 
-    const remainingSlotsInitial = slots.filter((s) => !parsedMap?.has(s));
+    const remainingSlotsInitial = filteredSlots.filter((s) => !parsedMap?.has(s));
     if (remainingSlotsInitial.length > 0 && !openaiAvailable) {
       return res.status(500).json({ error: "openai_not_configured" });
     }
 
-    if (openaiAvailable && parsedMap?.size !== slots.length) {
+    if (openaiAvailable && parsedMap?.size !== filteredSlots.length) {
       try {
         let attempts = 0;
         while (attempts < 3) {
           attempts += 1;
-          const remainingSlots = slots.filter((s) => !parsedMap?.has(s));
+          const remainingSlots = filteredSlots.filter((s) => !parsedMap?.has(s));
           const assumptions =
             "Contexte: France (hémisphère Nord). Date de référence: 25 janvier 2026.";
           const resp = await openai.responses.create({
@@ -631,7 +641,7 @@ router.post("/proposals/generate", async (req, res) => {
       }
     }
 
-    if (!openaiAvailable || !parsedMap || parsedMap.size !== slots.length) {
+    if (!openaiAvailable || !parsedMap || parsedMap.size !== filteredSlots.length) {
       return res.status(500).json({ error: "ai_generate_failed", raw_text: rawText });
     }
 
@@ -651,7 +661,7 @@ router.post("/proposals/generate", async (req, res) => {
         .filter(Boolean)
     );
 
-    for (const slot of slots) {
+    for (const slot of filteredSlots) {
       const title = parsedMap?.get(slot);
       if (!title) continue;
       if (!nextData.menu_proposals[slot]) {
@@ -678,7 +688,7 @@ router.post("/proposals/generate", async (req, res) => {
 
     // Enforce zero-duplicate titles across all requested slots
     const seenTitles = new Set();
-    for (const slot of slots) {
+    for (const slot of filteredSlots) {
       const list = Array.isArray(nextData.menu_proposals?.[slot])
         ? nextData.menu_proposals[slot]
         : [];
@@ -695,8 +705,8 @@ router.post("/proposals/generate", async (req, res) => {
       nextData.menu_proposals[slot] = unique;
     }
 
-    const aiCount = slots.filter((s) => sourceBySlot[s] === "CHAT_GENERATED").length;
-    const driveCount = slots.filter((s) => sourceBySlot[s] === "DRIVE_INDEX").length;
+    const aiCount = filteredSlots.filter((s) => sourceBySlot[s] === "CHAT_GENERATED").length;
+    const driveCount = filteredSlots.filter((s) => sourceBySlot[s] === "DRIVE_INDEX").length;
     if (aiCount < minAI) {
       return res.status(409).json({
         error: "ai_ratio_too_low",
@@ -712,7 +722,7 @@ router.post("/proposals/generate", async (req, res) => {
 
     // Final global de-duplication across all slots (including existing ones)
     const orderedSlots = [
-      ...slots,
+      ...filteredSlots,
       ...Object.keys(nextData.menu_proposals || {}).filter((s) => !slotsSet.has(s))
     ];
     const seenGlobal = new Set();
@@ -742,8 +752,8 @@ router.post("/proposals/generate", async (req, res) => {
       menu_proposals: nextData.menu_proposals,
       raw_text: rawText,
       ratio: {
-        ai_count: slots.filter((s) => sourceBySlot[s] === "CHAT_GENERATED").length,
-        drive_count: slots.filter((s) => sourceBySlot[s] === "DRIVE_INDEX").length,
+        ai_count: filteredSlots.filter((s) => sourceBySlot[s] === "CHAT_GENERATED").length,
+        drive_count: filteredSlots.filter((s) => sourceBySlot[s] === "DRIVE_INDEX").length,
         min_ai: minAI,
         max_ai: maxAI,
         warning: ratioWarning

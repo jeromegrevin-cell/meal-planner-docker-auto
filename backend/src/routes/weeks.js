@@ -8,6 +8,7 @@ const router = express.Router();
 
 const WEEKS_DIR = path.join(DATA_DIR, "weeks");
 const RECIPES_DIR = path.join(DATA_DIR, "recipes");
+const CHAT_DIR = path.join(DATA_DIR, "chat_sessions");
 
 function nowIso() {
   return new Date().toISOString();
@@ -540,6 +541,104 @@ router.get("/:week_id/constraints", async (req, res) => {
   } catch (e) {
     const status = e?.code === "ENOENT" ? 404 : 500;
     res.status(status).json({ error: "constraints_failed", details: e.message });
+  }
+});
+
+/**
+ * GET /api/weeks/:week_id/audit
+ * Basic structural audit against week rules (no lunch slots, filled dinners, people count).
+ * Note: seasonality/ingredient repetition require recipe content and are returned as unknown.
+ */
+router.get("/:week_id/audit", async (req, res) => {
+  try {
+    const week = await loadWeek(req.params.week_id);
+    const slots = week.slots || {};
+    const noLunchSlots =
+      week.rules_readonly?.no_lunch_slots || ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"];
+    let proposalsBySlot = {};
+    try {
+      const chat = await readJson(path.join(CHAT_DIR, `${week.week_id}.json`));
+      if (chat?.menu_proposals && typeof chat.menu_proposals === "object") {
+        proposalsBySlot = chat.menu_proposals;
+      }
+    } catch {
+      proposalsBySlot = {};
+    }
+
+    const checks = [];
+    const slotIssues = [];
+
+    for (const slot of Object.keys(slots)) {
+      const inNoLunch = noLunchSlots.includes(slot);
+      const proposals = Array.isArray(proposalsBySlot?.[slot]) ? proposalsBySlot[slot] : [];
+
+      if (inNoLunch) {
+        if (proposals.length > 0) {
+          slotIssues.push({
+            slot,
+            issue: "no_lunch_slot_should_have_no_proposals",
+            status: "fail"
+          });
+        }
+        continue;
+      }
+
+      if (proposals.length === 0) {
+        slotIssues.push({
+          slot,
+          issue: "slot_has_no_proposals",
+          status: "fail"
+        });
+      }
+    }
+
+    const peopleIssues = [];
+    for (const [slot, s] of Object.entries(slots)) {
+      const adults = s?.people?.adults;
+      const children = s?.people?.children;
+      if (adults !== 2 || children !== 1) {
+        peopleIssues.push({ slot, adults, children });
+      }
+    }
+
+    checks.push({
+      id: "no_lunch_slots_empty",
+      status: slotIssues.some((i) => i.issue === "no_lunch_slot_should_have_no_proposals")
+        ? "fail"
+        : "pass",
+      details: noLunchSlots
+    });
+    checks.push({
+      id: "proposals_present",
+      status: slotIssues.some((i) => i.issue === "slot_has_no_proposals") ? "fail" : "pass",
+      details: "All non-no-lunch slots should have at least one proposal."
+    });
+    checks.push({
+      id: "people_2A_1E",
+      status: peopleIssues.length ? "fail" : "pass",
+      details: peopleIssues
+    });
+    checks.push({
+      id: "seasonality_required",
+      status: "unknown",
+      details: "Requires ingredient analysis."
+    });
+    checks.push({
+      id: "main_ingredient_repetition",
+      status: "unknown",
+      details: "Requires ingredient analysis."
+    });
+
+    const ok = checks.every((c) => c.status === "pass");
+    res.json({
+      ok,
+      week_id: week.week_id,
+      checks,
+      slot_issues: slotIssues
+    });
+  } catch (e) {
+    const status = e?.code === "ENOENT" ? 404 : 500;
+    res.status(status).json({ error: "week_audit_failed", details: e.message });
   }
 });
 
