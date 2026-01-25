@@ -44,6 +44,11 @@ credentials/
 backend/data/
 frontend/.vite/
 backend/data/chat_sessions/2026-W03.json
+recettes_index.json
+recipes_list.csv
+recipes_nutrition.csv
+drive_ocr_gaps.txt
+flan_ocr-1.png
 
 # --------------------
 # Temporary / backup

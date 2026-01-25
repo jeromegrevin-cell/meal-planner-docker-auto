@@ -30,6 +30,7 @@ import time
 import random
 import shutil
 import subprocess
+import tempfile
 import unicodedata
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -272,18 +273,27 @@ def extract_text_from_pdf(local_path: Path) -> str:
         text = extract_text(str(local_path)) or ""
     except Exception:
         text = ""
-    if len(text.strip()) >= OCR_MIN_TEXT_CHARS:
+    if not should_ocr_text(text):
         return text
     ocr_text = ocr_pdf_text(local_path)
     return ocr_text or text
 
 
+def should_ocr_text(text: str) -> bool:
+    stripped = (text or "").strip()
+    if len(stripped) < OCR_MIN_TEXT_CHARS:
+        return True
+    lowered = deaccent(stripped.lower())
+    if re.search(r"ingr|ingredient|etape|prepar|cuisson|instructions", lowered):
+        return False
+    return True
+
+
 def ocr_pdf_text(local_path: Path) -> str:
     if not can_ocr_pdf():
         return ""
-    tmp_dir = TMP_DIR / f"ocr_{local_path.stem}"
+    tmp_dir = Path(tempfile.mkdtemp(prefix="ocr_recettes_"))
     try:
-        tmp_dir.mkdir(parents=True, exist_ok=True)
         output_prefix = tmp_dir / "page"
         cmd = [
             "pdftoppm",
@@ -376,6 +386,8 @@ INGR_HEADERS = [
     r"liste d[ei]s? ingr",
     r"liste des ingrédients",
     r"composition",
+    r"ingr[ée]dients?\s*\(",
+    r"ingredients?\s*\(",
     r"pour la (p[aâ]te|garniture|sauce)",
     r"pour les? (p[aâ]tes?|garniture|sauce)",
     r"i\s*n\s*g\s*r\s*[ée]?\s*d\s*i\s*e\s*n\s*t\s*s?"
@@ -383,6 +395,7 @@ INGR_HEADERS = [
 STEP_HEADERS = [
     r"pr[ée]paration",
     r"[ée]tapes?",
+    r"[ée]tapes?\s+pas\s+[aà]\s+pas",
     r"r[ée]alisation",
     r"mode op[ée]ratoire",
     r"cuisson",
@@ -455,7 +468,7 @@ SKIP_INGR_SIMPLE_RE = re.compile(
 )
 
 
-STEP_MARK_RE = re.compile(r"^\s*(\d+[\)\.]|[ée]tape|step)\b", re.I)
+STEP_MARK_RE = re.compile(r"^\s*(\d+[\)\.]|\d+\s+|[ée]tape|step)\b", re.I)
 
 
 def split_sections(text: str) -> Dict[str, str]:
@@ -523,7 +536,7 @@ def split_sections(text: str) -> Dict[str, str]:
 def lines_to_list(block: str) -> List[str]:
     out: List[str] = []
     for l in block.splitlines():
-        l = re.sub(r"^[\-•*\d.\)\s]+", "", l).strip()
+        l = re.sub(r"^[\-•*\+\d.\)\s]+", "", l).strip()
         if l:
             out.append(l)
     return out
@@ -544,7 +557,7 @@ def parse_ingredients_lines(block: str) -> Dict[str, List[str]]:
     valid: List[str] = []
     invalid: List[str] = []
     raw_lines = [
-        re.sub(r"^[\-•*]+\s*", "", raw).strip()
+        re.sub(r"^[\-•*+]+\s*", "", raw).strip()
         for raw in block.splitlines()
     ]
     lines = [l for l in raw_lines if l]
@@ -577,6 +590,9 @@ def parse_ingredients_lines(block: str) -> Dict[str, List[str]]:
             continue
         valid.append(line)
         i += 1
+    if not valid and raw_lines:
+        # Fallback: accept raw lines when regex is too strict.
+        return {"valid": raw_lines[:80], "invalid": []}
     return {"valid": valid, "invalid": invalid}
 
 
@@ -757,6 +773,8 @@ def main():
             parsed_ing = parse_ingredients_lines(sections["ingredients"])
             ingredients_list = parsed_ing["valid"][:120]
             steps_list = lines_to_list(sections["steps"])[:200]
+            if not steps_list and sections["steps"].strip():
+                steps_list = [l.strip() for l in sections["steps"].splitlines() if l.strip()][:200]
             portions = parse_portions(name, sections["ingredients"], sections["steps"])
 
             status = sections.get("status", "INCOMPLETE")
