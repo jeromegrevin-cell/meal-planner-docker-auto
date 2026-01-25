@@ -28,6 +28,8 @@ import json
 import re
 import time
 import random
+import shutil
+import subprocess
 import unicodedata
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -94,6 +96,8 @@ OUT_CSV = BASE_DIR / "recipes_list.csv"
 OUT_NUTR = BASE_DIR / "recipes_nutrition.csv"
 TMP_DIR = BASE_DIR / ".cache_recettes"
 NUTRION_CSV = BASE_DIR / "nutrition_table.csv"   # your custom table
+OCR_MIN_TEXT_CHARS = 80
+OCR_MAX_PAGES = 2
 
 ENV_FOLDER_ID = os.environ.get("RECETTES_FOLDER_ID", "").strip()
 
@@ -265,9 +269,52 @@ def extract_text_from_pdf(local_path: Path) -> str:
         print("⚠️ pdfminer.six not installed, cannot parse PDF:", local_path)
         return ""
     try:
-        return extract_text(str(local_path)) or ""
+        text = extract_text(str(local_path)) or ""
     except Exception:
+        text = ""
+    if len(text.strip()) >= OCR_MIN_TEXT_CHARS:
+        return text
+    ocr_text = ocr_pdf_text(local_path)
+    return ocr_text or text
+
+
+def ocr_pdf_text(local_path: Path) -> str:
+    if not can_ocr_pdf():
         return ""
+    tmp_dir = TMP_DIR / f"ocr_{local_path.stem}"
+    try:
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        output_prefix = tmp_dir / "page"
+        cmd = [
+            "pdftoppm",
+            "-r", "200",
+            "-f", "1",
+            "-l", str(OCR_MAX_PAGES),
+            "-png",
+            str(local_path),
+            str(output_prefix)
+        ]
+        subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        texts = []
+        for img in sorted(tmp_dir.glob("page-*.png")):
+            t_cmd = ["tesseract", str(img), "stdout", "-l", "fra+eng"]
+            proc = subprocess.run(t_cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if proc.stdout:
+                texts.append(proc.stdout.decode("utf-8", errors="ignore"))
+        return "\n".join(texts).strip()
+    finally:
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
+
+
+def can_ocr_pdf() -> bool:
+    if not shutil.which("pdftoppm"):
+        return False
+    if not shutil.which("tesseract"):
+        return False
+    return True
 
 
 def extract_text_from_docx(local_path: Path) -> str:
