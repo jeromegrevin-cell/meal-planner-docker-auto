@@ -462,7 +462,6 @@ router.post("/proposals/generate", async (req, res) => {
     const openai = getOpenAIClient();
     const model = getModel();
 
-    const slotsSet = new Set(filteredSlots);
     const weekData = await readJson(path.join(DATA_DIR, "weeks", `${weekId}.json`)).catch(
       () => null
     );
@@ -473,6 +472,7 @@ router.post("/proposals/generate", async (req, res) => {
     if (filteredSlots.length === 0) {
       return res.status(400).json({ error: "no_eligible_slots" });
     }
+    const slotsSet = new Set(filteredSlots);
     if (overwrite) {
       for (const slot of filteredSlots) {
         nextData.menu_proposals[slot] = [];
@@ -541,8 +541,8 @@ router.post("/proposals/generate", async (req, res) => {
     );
 
     const slotCount = filteredSlots.length;
-    const minAI = Math.ceil(slotCount * 0.5);
-    const maxAI = Math.floor(slotCount * 0.66);
+    const minAI = Math.ceil(slotCount * 0.8);
+    const maxAI = Math.floor(slotCount * 0.8);
     const minDrive = slotCount - maxAI;
     const maxDrive = slotCount - minAI;
     const driveSlotsCount = Math.min(driveCandidates.length, Math.max(0, maxDrive));
