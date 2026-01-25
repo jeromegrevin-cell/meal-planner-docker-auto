@@ -130,9 +130,28 @@ function normalizeTitle(title) {
   return String(title || "").trim();
 }
 
-function parseProposalLines(lines, slots, existingTitles = null) {
+function normalizeKey(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function titleKey(title) {
+  const base = normalizeKey(title);
+  if (!base) return "";
+  const stop = new Set(["de", "du", "des", "la", "le", "les", "au", "aux", "a", "et", "en", "d", "l"]);
+  const tokens = base.split(" ").filter((t) => t && !stop.has(t));
+  tokens.sort();
+  return tokens.join(" ");
+}
+
+function parseProposalLines(lines, slots, existingTitles = null, existingKeys = null) {
   const slotSet = new Set(slots);
   const titles = new Set();
+  const keys = new Set();
   const map = new Map();
 
   for (const line of lines) {
@@ -144,13 +163,17 @@ function parseProposalLines(lines, slots, existingTitles = null) {
     if (!slotSet.has(slot)) continue;
     if (map.has(slot)) continue;
     const key = title.toLowerCase();
+    const tKey = titleKey(title);
     if (titles.has(key)) continue;
+    if (tKey && keys.has(tKey)) continue;
     if (existingTitles && existingTitles.has(key)) continue;
+    if (existingKeys && tKey && existingKeys.has(tKey)) continue;
     map.set(slot, title);
     titles.add(key);
+    if (tKey) keys.add(tKey);
   }
 
-  return { map, titles };
+  return { map, titles, keys };
 }
 
 function normalizeDriveTitle(raw) {
@@ -431,8 +454,9 @@ router.post("/proposals/generate", async (req, res) => {
 
   try {
     const { path: p, data } = await ensureChatFile(weekId);
-    if (!data.menu_proposals || typeof data.menu_proposals !== "object") {
-      data.menu_proposals = {};
+    const nextData = JSON.parse(JSON.stringify(data || {}));
+    if (!nextData.menu_proposals || typeof nextData.menu_proposals !== "object") {
+      nextData.menu_proposals = {};
     }
 
     const openai = getOpenAIClient();
@@ -441,13 +465,13 @@ router.post("/proposals/generate", async (req, res) => {
     const slotsSet = new Set(slots);
     if (overwrite) {
       for (const slot of slots) {
-        data.menu_proposals[slot] = [];
+        nextData.menu_proposals[slot] = [];
       }
     }
 
     const previousTitlesBySlot = {};
     for (const slot of slots) {
-      const list = data.menu_proposals?.[slot] || [];
+      const list = nextData.menu_proposals?.[slot] || [];
       previousTitlesBySlot[slot] = list
         .map((p) => String(p?.title || "").trim())
         .filter(Boolean);
@@ -462,7 +486,7 @@ router.post("/proposals/generate", async (req, res) => {
       .filter(Boolean);
 
     const usedTitlesForPrompt = Array.from(
-      Object.entries(data.menu_proposals || {})
+      Object.entries(nextData.menu_proposals || {})
         .filter(([slot]) => !slotsSet.has(slot))
         .flatMap(([, list]) => list || [])
         .map((p) => String(p?.title || "").trim())
@@ -478,16 +502,22 @@ router.post("/proposals/generate", async (req, res) => {
     let rawText = "";
     let lines = [];
     let parsedMap = null;
-    let fallbackRecipeBySlot = null;
     let openaiAvailable = !!openai;
-    let sourceType = openaiAvailable ? "CHAT_GENERATED" : "LOCAL_POOL";
+    let sourceType = openaiAvailable ? "CHAT_GENERATED" : "CHAT_GENERATED";
     const sourceBySlot = {};
 
     const usedTitlesForUniq = new Set(
-      Object.entries(data.menu_proposals || {})
+      Object.entries(nextData.menu_proposals || {})
         .filter(([slot]) => (overwrite ? !slotsSet.has(slot) : true))
         .flatMap(([, list]) => list || [])
         .map((p) => String(p?.title || "").trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const usedKeysForUniq = new Set(
+      Object.entries(nextData.menu_proposals || {})
+        .filter(([slot]) => (overwrite ? !slotsSet.has(slot) : true))
+        .flatMap(([, list]) => list || [])
+        .map((p) => titleKey(String(p?.title || "").trim()))
         .filter(Boolean)
     );
 
@@ -495,24 +525,43 @@ router.post("/proposals/generate", async (req, res) => {
     const driveCandidates = shuffle(
       driveTitles.filter((t) => {
         const key = t.toLowerCase();
-        return key && !usedTitlesForUniq.has(key);
+        const tKey = titleKey(t);
+        return key && !usedTitlesForUniq.has(key) && (!tKey || !usedKeysForUniq.has(tKey));
       })
     );
 
-    if (driveCandidates.length > 0) {
+    const slotCount = slots.length;
+    const minAI = Math.ceil(slotCount * 0.5);
+    const maxAI = Math.floor(slotCount * 0.66);
+    const minDrive = slotCount - maxAI;
+    const maxDrive = slotCount - minAI;
+    const driveSlotsCount = Math.min(driveCandidates.length, Math.max(0, maxDrive));
+    const ratioWarning = driveSlotsCount < minDrive ? "drive_insufficient_for_max_ai" : null;
+
+    if (driveCandidates.length > 0 && driveSlotsCount > 0) {
       const driveMap = new Map();
+      const driveSlots = new Set(shuffle(slots).slice(0, driveSlotsCount));
       for (const slot of slots) {
+        if (!driveSlots.has(slot)) continue;
         if (driveCandidates.length === 0) break;
         const title = driveCandidates.shift();
         const key = title.toLowerCase();
+        const tKey = titleKey(title);
         if (usedTitlesForUniq.has(key)) continue;
+        if (tKey && usedKeysForUniq.has(tKey)) continue;
         driveMap.set(slot, title);
         usedTitlesForUniq.add(key);
+        if (tKey) usedKeysForUniq.add(tKey);
         sourceBySlot[slot] = "DRIVE_INDEX";
       }
       if (driveMap.size > 0) {
         parsedMap = driveMap;
       }
+    }
+
+    const remainingSlotsInitial = slots.filter((s) => !parsedMap?.has(s));
+    if (remainingSlotsInitial.length > 0 && !openaiAvailable) {
+      return res.status(500).json({ error: "openai_not_configured" });
     }
 
     if (openaiAvailable && parsedMap?.size !== slots.length) {
@@ -521,6 +570,8 @@ router.post("/proposals/generate", async (req, res) => {
         while (attempts < 3) {
           attempts += 1;
           const remainingSlots = slots.filter((s) => !parsedMap?.has(s));
+          const assumptions =
+            "Contexte: France (hémisphère Nord). Date de référence: 25 janvier 2026.";
           const resp = await openai.responses.create({
             model,
             input: [
@@ -528,13 +579,14 @@ router.post("/proposals/generate", async (req, res) => {
               "Règles PRIORITAIRES:",
               "1) Format: une ligne par slot, format strict: '- slot: <titre>'.",
               "2) Aucune recette/ingrédient/liste de courses avant validation du tableau.",
-              "3) Si ambiguïté/information manquante: STOP et réponds uniquement: 'QUESTION: ...'.",
+              "3) Si ambiguïté/information manquante: fais une hypothèse raisonnable et continue.",
               "4) Personnes: 2 adultes + 1 enfant de 9 ans (adapter les portions, pas un x3 aveugle).",
               "5) Nutrition: ~500 kcal/adulte, pas de menu vide.",
               "6) Saison: légumes de saison, courgette interdite hors saison.",
               "7) Équivalences cru/cuit: pâtes x2,5 ; riz x3 ; semoule x2 ; légumineuses x3 ; pommes de terre x1 ; patate douce x1.",
               "8) Répétitions: ingrédient principal max 2 fois/semaine, si 2 fois -> 2 jours d’écart.",
               "9) Sources: mixer recettes générées + Drive si possible; demander rescan si index Drive non à jour.",
+              assumptions,
               "Donne un menu au format strict suivant (une ligne par slot):",
               ...remainingSlots.map((s) => `- ${s}: <titre>`),
               ...avoidLines,
@@ -543,14 +595,27 @@ router.post("/proposals/generate", async (req, res) => {
             ].join("\n")
           });
           rawText = resp.output_text || "";
+          if (rawText.trim().startsWith("QUESTION:")) {
+            // Retry once with explicit assumptions (already included) and continue loop.
+            rawText = "";
+            lines = [];
+            continue;
+          }
           lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
-          const parsed = parseProposalLines(lines, remainingSlots, usedTitlesForUniq);
+          const parsed = parseProposalLines(
+            lines,
+            remainingSlots,
+            usedTitlesForUniq,
+            usedKeysForUniq
+          );
           if (parsed.map.size === remainingSlots.length) {
             parsedMap = parsedMap || new Map();
             for (const [slot, title] of parsed.map.entries()) {
               parsedMap.set(slot, title);
               sourceBySlot[slot] = "CHAT_GENERATED";
               usedTitlesForUniq.add(title.toLowerCase());
+              const tKey = titleKey(title);
+              if (tKey) usedKeysForUniq.add(tKey);
             }
             break;
           }
@@ -560,150 +625,129 @@ router.post("/proposals/generate", async (req, res) => {
       } catch (_e) {
         openaiAvailable = false;
         openai = null;
-        sourceType = "LOCAL_POOL";
+        sourceType = "CHAT_GENERATED";
         rawText = "";
         lines = [];
       }
     }
 
     if (!openaiAvailable || !parsedMap || parsedMap.size !== slots.length) {
-      const localRecipes = await listLocalRecipes();
-      if (localRecipes.length === 0) {
-        return res.status(500).json({ error: "no_local_recipes" });
-      }
-      const candidates = shuffle(
-        localRecipes.filter((r) => {
-          const key = String(r?.title || "").trim().toLowerCase();
-          return key && !usedTitlesForUniq.has(key);
-        })
-      );
-      fallbackRecipeBySlot = {};
-      for (const slot of slots) {
-        if (parsedMap?.has(slot)) continue;
-        const pick = candidates.shift();
-        if (!pick) break;
-        fallbackRecipeBySlot[slot] = pick.recipe_id;
-        if (!parsedMap) parsedMap = new Map();
-        parsedMap.set(slot, pick.title);
-        sourceBySlot[slot] = "LOCAL_FALLBACK";
-        usedTitlesForUniq.add(String(pick.title || "").trim().toLowerCase());
-      }
+      return res.status(500).json({ error: "ai_generate_failed", raw_text: rawText });
     }
 
     const createdAt = nowIso();
     const usedTitles = new Set(
-      Object.entries(data.menu_proposals || {})
+      Object.entries(nextData.menu_proposals || {})
         .filter(([slot]) => (overwrite ? !slotsSet.has(slot) : true))
         .flatMap(([, list]) => list || [])
         .map((p) => String(p?.title || "").trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const usedTitleKeys = new Set(
+      Object.entries(nextData.menu_proposals || {})
+        .filter(([slot]) => (overwrite ? !slotsSet.has(slot) : true))
+        .flatMap(([, list]) => list || [])
+        .map((p) => titleKey(String(p?.title || "").trim()))
         .filter(Boolean)
     );
 
     for (const slot of slots) {
       const title = parsedMap?.get(slot);
       if (!title) continue;
-      if (!data.menu_proposals[slot]) {
-        data.menu_proposals[slot] = [];
+      if (!nextData.menu_proposals[slot]) {
+        nextData.menu_proposals[slot] = [];
       }
 
-      const titleKey = title.toLowerCase();
-      if (usedTitles.has(titleKey)) continue;
+      const titleLower = title.toLowerCase();
+      const tKey = titleKey(title);
+      if (usedTitles.has(titleLower)) continue;
+      if (tKey && usedTitleKeys.has(tKey)) continue;
 
-      data.menu_proposals[slot].push({
+      nextData.menu_proposals[slot].push({
         proposal_id: newProposalId(),
         title,
-        recipe_id: fallbackRecipeBySlot?.[slot] || null,
+        recipe_id: null,
         source: sourceBySlot[slot] || sourceType,
         status: "PROPOSED",
         to_save: false,
         created_at: createdAt
       });
-      usedTitles.add(titleKey);
+      usedTitles.add(titleLower);
+      if (tKey) usedTitleKeys.add(tKey);
     }
 
     // Enforce zero-duplicate titles across all requested slots
     const seenTitles = new Set();
     for (const slot of slots) {
-      const list = Array.isArray(data.menu_proposals?.[slot])
-        ? data.menu_proposals[slot]
+      const list = Array.isArray(nextData.menu_proposals?.[slot])
+        ? nextData.menu_proposals[slot]
         : [];
       const unique = [];
       for (const p of list) {
         const key = String(p?.title || "").trim().toLowerCase();
+        const tKey = titleKey(String(p?.title || "").trim());
         if (!key || seenTitles.has(key)) continue;
+        if (tKey && seenTitles.has(`k:${tKey}`)) continue;
         seenTitles.add(key);
+        if (tKey) seenTitles.add(`k:${tKey}`);
         unique.push(p);
       }
-      data.menu_proposals[slot] = unique;
+      nextData.menu_proposals[slot] = unique;
     }
 
-    // Fallback if model output didn't parse or created no proposals for some slots
-    const needsFallback = slots.some((slot) => {
-      const list = data.menu_proposals?.[slot] || [];
-      return list.length === 0;
-    });
-
-    if (needsFallback) {
-      const localRecipes = await listLocalRecipes();
-      if (localRecipes.length === 0) {
-        return res.status(500).json({ error: "no_local_recipes" });
-      }
-      const candidates = localRecipes.filter((r) => {
-        const key = String(r?.title || "").trim().toLowerCase();
-        return key && !usedTitles.has(key) && !seenTitles.has(key);
+    const aiCount = slots.filter((s) => sourceBySlot[s] === "CHAT_GENERATED").length;
+    const driveCount = slots.filter((s) => sourceBySlot[s] === "DRIVE_INDEX").length;
+    if (aiCount < minAI) {
+      return res.status(409).json({
+        error: "ai_ratio_too_low",
+        details: { aiCount, driveCount, minAI, maxAI }
       });
-      if (candidates.length === 0) {
-        return res.status(409).json({ error: "no_unique_recipes_left" });
-      }
-      const shuffled = shuffle(candidates);
-      let idx = 0;
-      for (const slot of slots) {
-        const list = data.menu_proposals?.[slot] || [];
-        if (list.length > 0) continue;
-        const pick = shuffled[idx % shuffled.length];
-        idx += 1;
-        if (!data.menu_proposals[slot]) data.menu_proposals[slot] = [];
-        data.menu_proposals[slot].push({
-          proposal_id: newProposalId(),
-          title: pick.title,
-          recipe_id: pick.recipe_id,
-          source: "LOCAL_FALLBACK",
-          status: "PROPOSED",
-          to_save: false,
-          created_at: createdAt
-        });
-        usedTitles.add(String(pick.title || "").trim().toLowerCase());
-      }
+    }
+    if (aiCount > maxAI && !ratioWarning) {
+      return res.status(409).json({
+        error: "ai_ratio_too_high",
+        details: { aiCount, driveCount, minAI, maxAI }
+      });
     }
 
     // Final global de-duplication across all slots (including existing ones)
     const orderedSlots = [
       ...slots,
-      ...Object.keys(data.menu_proposals || {}).filter((s) => !slotsSet.has(s))
+      ...Object.keys(nextData.menu_proposals || {}).filter((s) => !slotsSet.has(s))
     ];
     const seenGlobal = new Set();
     for (const slot of orderedSlots) {
-      const list = Array.isArray(data.menu_proposals?.[slot])
-        ? data.menu_proposals[slot]
+      const list = Array.isArray(nextData.menu_proposals?.[slot])
+        ? nextData.menu_proposals[slot]
         : [];
       const unique = [];
       for (const p of list) {
         const key = String(p?.title || "").trim().toLowerCase();
+        const tKey = titleKey(String(p?.title || "").trim());
         if (!key || seenGlobal.has(key)) continue;
+        if (tKey && seenGlobal.has(`k:${tKey}`)) continue;
         seenGlobal.add(key);
+        if (tKey) seenGlobal.add(`k:${tKey}`);
         unique.push(p);
       }
-      data.menu_proposals[slot] = unique;
+      nextData.menu_proposals[slot] = unique;
     }
 
-    data.updated_at = nowIso();
-    await safeWriteChat(p, data);
+    nextData.updated_at = nowIso();
+    await safeWriteChat(p, nextData);
 
     res.json({
       ok: true,
       week_id: weekId,
-      menu_proposals: data.menu_proposals,
-      raw_text: rawText
+      menu_proposals: nextData.menu_proposals,
+      raw_text: rawText,
+      ratio: {
+        ai_count: slots.filter((s) => sourceBySlot[s] === "CHAT_GENERATED").length,
+        drive_count: slots.filter((s) => sourceBySlot[s] === "DRIVE_INDEX").length,
+        min_ai: minAI,
+        max_ai: maxAI,
+        warning: ratioWarning
+      }
     });
   } catch (e) {
     res.status(500).json({ error: "proposals_generate_failed", details: e.message });
