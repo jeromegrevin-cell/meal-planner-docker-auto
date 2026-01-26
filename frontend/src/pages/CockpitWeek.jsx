@@ -287,6 +287,7 @@ export default function CockpitWeek() {
   const [proposalRecipe, setProposalRecipe] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState(null);
+  const [uploadingWeek, setUploadingWeek] = useState(false);
 
   // Validated recipe modal
   const [recipeModal, setRecipeModal] = useState(null); // { slot }
@@ -738,20 +739,33 @@ export default function CockpitWeek() {
       return;
     }
     try {
+      setUploadingWeek(true);
+      const errors = [];
+      let okCount = 0;
       for (const [slot, recipe_id] of entries) {
-        if (!recipe_id) continue;
-        await fetchJson("/api/recipes/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ recipe_id })
-        });
+        if (!recipe_id || uploadedRecipeIdsBySlot?.[slot]) continue;
+        try {
+          await fetchJson("/api/recipes/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipe_id })
+          });
+          okCount += 1;
+          setUploadedRecipeIdsBySlot((prev) => ({ ...prev, [slot]: true }));
+        } catch (e) {
+          errors.push({ slot, error: e.message || String(e) });
+        }
       }
-      // All uploads succeeded: mark every saved slot as uploaded
-      setUploadedRecipeIdsBySlot(
-        Object.fromEntries(entries.map(([slot]) => [slot, true]))
-      );
+      if (errors.length) {
+        const sample = errors.slice(0, 3).map((e) => `${e.slot}: ${e.error}`).join("\n");
+        alert(`Upload terminé avec erreurs (${okCount} ok, ${errors.length} erreur(s)):\n${sample}`);
+      } else {
+        alert(`Upload terminé (${okCount} recette(s)). Pense à lancer un rescan.`);
+      }
     } catch (e) {
       alert(`Upload failed: ${e.message}`);
+    } finally {
+      setUploadingWeek(false);
     }
   }
 
@@ -1134,7 +1148,7 @@ export default function CockpitWeek() {
               icon="☁️⬆️"
               label="Upload sur Drive"
               onClick={onUploadWeek}
-              disabled={!week?.week_id}
+              disabled={!week?.week_id || uploadingWeek}
             />
             {pendingUploadCount > 0 ? (
               <span style={{ fontSize: 12, opacity: 0.8 }}>

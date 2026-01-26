@@ -1,6 +1,9 @@
 import express from "express";
 import path from "path";
 import fs from "fs/promises";
+import { spawn } from "child_process";
+import os from "os";
+import fsSync from "fs";
 import { fileURLToPath } from "url";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 import { DATA_DIR } from "../lib/dataPaths.js";
@@ -144,10 +147,113 @@ async function saveRecipeJson({ title, source, people, preview }) {
   return recipe;
 }
 
-async function uploadPdfStub() {
-  throw new Error(
-    "drive_upload_not_implemented: configure a Drive uploader to replace the stub"
+async function fileExists(p) {
+  try {
+    await fs.access(p);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function resolvePythonBin() {
+  const fromEnv = (process.env.PYTHON_BIN || "").trim();
+  if (fromEnv) return fromEnv;
+  const candidates = [
+    path.join(ROOT_DIR, ".venv", "bin", "python"),
+    path.join(process.cwd(), ".venv", "bin", "python"),
+    "python3",
+    "python"
+  ];
+  for (const p of candidates) {
+    if (p.startsWith("python")) return p;
+    if (await fileExists(p)) return p;
+  }
+  return "python3";
+}
+
+async function resolveCredentialsPath() {
+  const envPath = (process.env.GOOGLE_APPLICATION_CREDENTIALS || "").trim();
+  if (envPath && (await fileExists(envPath))) return envPath;
+  const secretsDir = (process.env.MEAL_PLANNER_SECRETS_DIR || "").trim();
+  if (secretsDir) {
+    const p = path.join(
+      secretsDir,
+      "service_accounts",
+      "chatgpt-recettes-access.json"
+    );
+    if (await fileExists(p)) return p;
+  }
+  const fallbackDir = path.join(os.homedir(), "meal-planner-secrets");
+  const fallbackPath = path.join(
+    fallbackDir,
+    "service_accounts",
+    "chatgpt-recettes-access.json"
   );
+  if (await fileExists(fallbackPath)) return fallbackPath;
+  return null;
+}
+
+async function resolveUploadScriptPath() {
+  const candidates = [
+    path.join(ROOT_DIR, "drive_recettes_upload.py"),
+    path.join(ROOT_DIR, "scripts", "drive_recettes_upload.py")
+  ];
+  for (const p of candidates) {
+    if (await fileExists(p)) return p;
+  }
+  return candidates[0];
+}
+
+async function uploadPdfToDrive({ title, pdfPath }) {
+  const scriptPath = await resolveUploadScriptPath();
+  const pythonBin = await resolvePythonBin();
+  const credentialsPath = await resolveCredentialsPath();
+  if (!credentialsPath) {
+    throw new Error("missing_service_account");
+  }
+
+  const env = { ...process.env };
+  env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+  if (!env.MEAL_PLANNER_SECRETS_DIR && credentialsPath) {
+    const secretsDir = path.dirname(path.dirname(credentialsPath));
+    env.MEAL_PLANNER_SECRETS_DIR = secretsDir;
+  }
+
+  const command = `${pythonBin} -u "${scriptPath}" --pdf "${pdfPath}" --title "${title}"`;
+  return new Promise((resolve, reject) => {
+    const child = spawn("bash", ["-lc", command], {
+      cwd: ROOT_DIR,
+      env
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => {
+      stdout += d.toString();
+    });
+    child.stderr.on("data", (d) => {
+      stderr += d.toString();
+    });
+    child.on("error", (err) => reject(err));
+    child.on("close", (code) => {
+      const out = stdout.trim();
+      if (code !== 0) {
+        return reject(
+          new Error(`drive_upload_failed:${stderr || out || `exit_code:${code}`}`)
+        );
+      }
+      let payload = null;
+      try {
+        payload = JSON.parse(out);
+      } catch (_e) {
+        return reject(new Error(`drive_upload_parse_failed:${out}`));
+      }
+      if (!payload?.ok) {
+        return reject(new Error(payload?.error || "drive_upload_failed"));
+      }
+      return resolve(payload);
+    });
+  });
 }
 
 function applyRecipePatch(recipe, patch) {
@@ -281,14 +387,33 @@ router.post("/upload", async (req, res) => {
     }
 
     const pdf_path = String(req.body?.pdf_path || path.join(PDFS_DIR, `${recipe_id}.pdf`));
-    const drive_path = await uploadPdfStub(recipe, pdf_path);
+    if (!fsSync.existsSync(pdf_path)) {
+      return res.status(404).json({ error: "pdf_not_found", pdf_path });
+    }
+    const upload = await uploadPdfToDrive({ title: recipe.title || recipe_id, pdfPath: pdf_path });
+    const drive_path = upload.drive_path || "";
+    recipe.source = {
+      ...(recipe.source || {}),
+      type: "DRIVE",
+      drive_path,
+      origin: recipe.source?.origin || "UPLOAD"
+    };
+    recipe.updated_at = nowIso();
+    await writeJson(recipePath(recipe_id), recipe);
     await updateLastUpload();
-    return res.json({ ok: true, recipe_id, drive_path });
+    return res.json({
+      ok: true,
+      recipe_id,
+      drive_path,
+      file_id: upload.file_id || null,
+      webViewLink: upload.webViewLink || null,
+      already_exists: Boolean(upload.already_exists)
+    });
   } catch (e) {
     const status = e?.code === "ENOENT"
       ? 404
-      : String(e?.message || "").startsWith("drive_upload_not_implemented")
-        ? 501
+      : String(e?.message || "").includes("missing_service_account")
+        ? 500
         : 500;
     return res.status(status).json({ error: "recipe_upload_failed", details: e.message });
   }
@@ -320,18 +445,28 @@ router.post("/save-and-upload", async (req, res) => {
       return res.status(400).json({ error: "invalid_recipe", details: validation.errors });
     }
     const pdf_path = await generatePdfStub(recipe.recipe_id, recipe.title);
-    const drive_path = await uploadPdfStub(recipe, pdf_path);
+    const upload = await uploadPdfToDrive({ title: recipe.title || recipe.recipe_id, pdfPath: pdf_path });
+    const drive_path = upload.drive_path || "";
+    recipe.source = {
+      ...(recipe.source || {}),
+      type: "DRIVE",
+      drive_path,
+      origin: recipe.source?.origin || "UPLOAD"
+    };
+    recipe.updated_at = nowIso();
+    await writeJson(recipePath(recipe.recipe_id), recipe);
     await updateLastUpload();
     return res.json({
       ok: true,
       recipe_id: recipe.recipe_id,
       pdf_path,
-      drive_path
+      drive_path,
+      file_id: upload.file_id || null,
+      webViewLink: upload.webViewLink || null,
+      already_exists: Boolean(upload.already_exists)
     });
   } catch (e) {
-    const status = String(e?.message || "").startsWith("drive_upload_not_implemented")
-      ? 501
-      : 500;
+    const status = String(e?.message || "").includes("missing_service_account") ? 500 : 500;
     return res.status(status).json({ error: "recipe_save_upload_failed", details: e.message });
   }
 });
