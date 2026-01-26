@@ -58,7 +58,7 @@ function DriveIcon({ size = 16 }) {
       viewBox="0 0 48 48"
       aria-hidden="true"
       focusable="false"
-      style={{ display: "inline-block", verticalAlign: "middle" }}
+      style={{ display: "inline-block", verticalAlign: "baseline" }}
     >
       <path fill="#0F9D58" d="M16.5 6 3 29.5l3 5.2L22.5 6z" />
       <path fill="#4285F4" d="M45 29.5 31.5 6 15 34.7l.3.6H41z" />
@@ -1229,7 +1229,7 @@ export default function CockpitWeek() {
                   {isValidated ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ fontWeight: 700 }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
                           {validatedIsDrive ? <DriveIcon size={14} /> : null}
                           {validatedLabel(s)}
                         </span>
@@ -1360,15 +1360,13 @@ export default function CockpitWeek() {
                               onClick={(e) => e.stopPropagation()}
                             >
                               <span style={{ flex: 1 }}>
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
                                   {p?.source === "DRIVE" || p?.source === "DRIVE_INDEX" ? (
                                     <DriveIcon size={14} />
                                   ) : null}
-                                  <span>
-                                    {p.title}
-                                    {totalPeople ? ` · ${totalPeople} pers.` : ""}
-                                  </span>
+                                  {p.title}
                                 </span>
+                                {totalPeople ? ` · ${totalPeople} pers.` : ""}
                               </span>
 
                               <IconButton
