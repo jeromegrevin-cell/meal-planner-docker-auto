@@ -210,6 +210,43 @@ function peopleSignature(people) {
   return `${adults}|${children}|${months}`;
 }
 
+async function buildPreviewFromTitle(title, people) {
+  const openai = getOpenAIClient();
+  if (!openai) {
+    const err = new Error("openai_not_configured");
+    err.code = "openai_not_configured";
+    throw err;
+  }
+
+  const model = getModel();
+  const peopleLine = people
+    ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
+    : "";
+
+  const prompt = [
+    `Génère une fiche courte de recette pour : "${title}".`,
+    peopleLine,
+    "Réponds STRICTEMENT en JSON avec ces clés:",
+    '{"description_courte":"...", "ingredients":[{"item":"...","qty":"...","unit":"..."}], "preparation_steps":["...","..."]}',
+    "IMPORTANT: preparation_steps doit contenir au moins 3 étapes."
+  ].join("\n");
+
+  const resp = await openai.responses.create({
+    model,
+    input: prompt
+  });
+
+  const raw = resp.output_text || "";
+  try {
+    return JSON.parse(raw);
+  } catch (_e) {
+    const err = new Error("preview_parse_failed");
+    err.code = "preview_parse_failed";
+    err.raw_text = raw;
+    throw err;
+  }
+}
+
 async function ensureChatFile(weekId) {
   await ensureDir(CHAT_DIR);
 
@@ -784,45 +821,25 @@ router.post("/proposals/preview", async (req, res) => {
   try {
     const { path: p, data } = await ensureChatFile(weekId);
     const list = data.menu_proposals?.[slot] || [];
-    const idx = list.findIndex((x) => x?.proposal_id === proposalId);
-    if (idx === -1) return res.status(404).json({ error: "proposal_not_found" });
+    let idx = list.findIndex((x) => x?.proposal_id === proposalId);
+    if (idx === -1 && title) {
+      const needle = normalizeKey(title);
+      if (needle) {
+        idx = list.findIndex((x) => normalizeKey(x?.title || "") === needle);
+      }
+    }
 
     const signature = peopleSignature(people);
 
     // Return cached preview if present and people match
-    if (list[idx].preview && list[idx].preview_people_signature === signature) {
-      return res.json({ ok: true, preview: list[idx].preview });
+    if (idx !== -1 && list[idx].preview && list[idx].preview_people_signature === signature) {
+      return res.json({ ok: true, preview: list[idx].preview, stored: true });
     }
 
-    const openai = getOpenAIClient();
-    if (!openai) {
-      return res.status(500).json({ error: "openai_not_configured" });
-    }
+    const preview = await buildPreviewFromTitle(title, people);
 
-    const model = getModel();
-    const peopleLine = people
-      ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
-      : "";
-
-    const prompt = [
-      `Génère une fiche courte de recette pour : "${title}".`,
-      peopleLine,
-      "Réponds STRICTEMENT en JSON avec ces clés:",
-      '{"description_courte":"...", "ingredients":[{"item":"...","qty":"...","unit":"..."}], "preparation_steps":["...","..."]}',
-      "IMPORTANT: preparation_steps doit contenir au moins 3 étapes."
-    ].join("\n");
-
-    const resp = await openai.responses.create({
-      model,
-      input: prompt
-    });
-
-    const raw = resp.output_text || "";
-    let preview = null;
-    try {
-      preview = JSON.parse(raw);
-    } catch (_e) {
-      return res.status(500).json({ error: "preview_parse_failed", raw_text: raw });
+    if (idx === -1) {
+      return res.json({ ok: true, preview, stored: false, proposal_missing: true });
     }
 
     list[idx].preview = preview;
@@ -831,8 +848,14 @@ router.post("/proposals/preview", async (req, res) => {
     data.updated_at = nowIso();
     await safeWriteChat(p, data);
 
-    return res.json({ ok: true, preview });
+    return res.json({ ok: true, preview, stored: true });
   } catch (e) {
+    if (e?.code === "openai_not_configured") {
+      return res.status(500).json({ error: "openai_not_configured" });
+    }
+    if (e?.code === "preview_parse_failed") {
+      return res.status(500).json({ error: "preview_parse_failed", raw_text: e.raw_text || "" });
+    }
     return res.status(500).json({ error: "preview_failed", details: e.message });
   }
 });
@@ -849,39 +872,15 @@ router.post("/preview-title", async (req, res) => {
   if (!title) return res.status(400).json({ error: "missing_title" });
 
   try {
-    const openai = getOpenAIClient();
-    if (!openai) {
+    const preview = await buildPreviewFromTitle(title, people);
+    return res.json({ ok: true, preview, stored: false });
+  } catch (e) {
+    if (e?.code === "openai_not_configured") {
       return res.status(500).json({ error: "openai_not_configured" });
     }
-
-    const model = getModel();
-    const peopleLine = people
-      ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
-      : "";
-
-    const prompt = [
-      `Génère une fiche courte de recette pour : "${title}".`,
-      peopleLine,
-      "Réponds STRICTEMENT en JSON avec ces clés:",
-      '{"description_courte":"...", "ingredients":[{"item":"...","qty":"...","unit":"..."}], "preparation_steps":["...","..."]}',
-      "IMPORTANT: preparation_steps doit contenir au moins 3 étapes."
-    ].join("\n");
-
-    const resp = await openai.responses.create({
-      model,
-      input: prompt
-    });
-
-    const raw = resp.output_text || "";
-    let preview = null;
-    try {
-      preview = JSON.parse(raw);
-    } catch (_e) {
-      return res.status(500).json({ error: "preview_parse_failed", raw_text: raw });
+    if (e?.code === "preview_parse_failed") {
+      return res.status(500).json({ error: "preview_parse_failed", raw_text: e.raw_text || "" });
     }
-
-    return res.json({ ok: true, preview });
-  } catch (e) {
     return res.status(500).json({ error: "preview_failed", details: e.message });
   }
 });
