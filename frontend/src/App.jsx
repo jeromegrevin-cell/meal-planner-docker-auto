@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import Home from "./pages/Home.jsx";
 import CockpitWeek from "./pages/CockpitWeek.jsx";
-import TokensUsage from "./pages/TokensUsage.jsx";
 
 function AppHeader() {
   return (
@@ -22,7 +21,13 @@ function AppHeader() {
       </Link>
 
       <div style={{ marginLeft: "auto" }}>
-        <Link to="/tokens" style={{ textDecoration: "none" }} aria-label="Tokens">
+        <a
+          href="https://platform.openai.com/settings/organization/usage"
+          target="_blank"
+          rel="noreferrer"
+          style={{ textDecoration: "none" }}
+          aria-label="OpenAI Usage"
+        >
           <span
             style={{
               display: "inline-flex",
@@ -38,7 +43,7 @@ function AppHeader() {
           >
             T
           </span>
-        </Link>
+        </a>
       </div>
     </div>
   );
@@ -51,7 +56,6 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/weeks" element={<CockpitWeek />} />
-        <Route path="/tokens" element={<TokensUsage />} />
       </Routes>
     </BrowserRouter>
   );
