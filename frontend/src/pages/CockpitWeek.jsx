@@ -1131,7 +1131,7 @@ export default function CockpitWeek() {
               value={prepWeekId}
               readOnly
             />
-            <div style={{ fontSize: 12, opacity: 0.75 }}>Date de début</div>
+            <div style={{ fontSize: 14, opacity: 0.75 }}>Date de début</div>
             <input
               type="date"
               value={prepStart}
@@ -1144,7 +1144,7 @@ export default function CockpitWeek() {
                 setPrepWeekId(buildWeekIdForDates(picked, weekIds));
               }}
             />
-            <div style={{ fontSize: 12, opacity: 0.75 }}>Date de fin</div>
+            <div style={{ fontSize: 14, opacity: 0.75 }}>Date de fin</div>
             <input
               type="date"
               value={prepEnd}
