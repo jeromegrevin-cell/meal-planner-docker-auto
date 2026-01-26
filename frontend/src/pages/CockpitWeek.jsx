@@ -1111,7 +1111,7 @@ export default function CockpitWeek() {
             ))}
           </select>
           {selectedWeekId ? (
-            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
               Semaine active: {selectedWeekId}
             </div>
           ) : null}
@@ -1172,20 +1172,20 @@ export default function CockpitWeek() {
           >
             Proposer menus
           </button>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>
+          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
             Les recettes non validées seront remplacées.
           </div>
         </section>
 
         <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
           <div style={{ fontWeight: 700, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span>4 · Sauvegarder puis Upload</span>
+            <span>4 · Upload</span>
             <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 999, background: pendingUploadCount === 0 ? "#e8f5e9" : "#f2f2f2", color: pendingUploadCount === 0 ? "#1b5e20" : "#666" }}>
               {pendingUploadCount === 0 ? "OK" : `${pendingUploadCount} à uploader`}
             </span>
           </div>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>
-            Valide une recette → Sauvegarde → Upload.
+          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
+            Upload to Drive/Recettes
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
             <IconButton
@@ -1245,7 +1245,9 @@ export default function CockpitWeek() {
                 }}
               >
                 <td style={{ width: 220, verticalAlign: "top", padding: "10px 8px" }}>
-                  {getSlotLabel(slot)}
+                  <div style={{ fontWeight: 700 }}>
+                    {getSlotLabel(slot)}
+                  </div>
 
                   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
                     {totalPeople} pers.
