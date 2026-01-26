@@ -435,9 +435,8 @@ export default function CockpitWeek() {
       }
 
       await loadWeeksList();
-      await onChangeWeek(computedWeekId);
-
-      const weekSlots = week?.slots || {};
+      const currentWeek = await onChangeWeek(computedWeekId);
+      const weekSlots = currentWeek?.slots || {};
       const slotsToGenerate = PROPOSAL_SLOTS.filter(
         (slot) => !(weekSlots[slot]?.validated === true)
       );
@@ -528,6 +527,7 @@ export default function CockpitWeek() {
       setPrepEnd(w.date_end);
       setPrepWeekId(w.week_id || "");
     }
+    return w;
   }
 
   async function onPrepareWeek() {
@@ -1082,8 +1082,8 @@ export default function CockpitWeek() {
           gap: 18
         }}
       >
-        <section>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>Semaine</div>
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>1 · Choisir une semaine</div>
           <select
             style={{ width: "100%" }}
             value={selectedWeekId}
@@ -1095,8 +1095,8 @@ export default function CockpitWeek() {
           </select>
         </section>
 
-        <section>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>Nouvelle semaine</div>
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>2 · Créer une nouvelle semaine</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <input
               type="text"
@@ -1114,7 +1114,7 @@ export default function CockpitWeek() {
                 setPrepStart(picked);
                 const end = addDays(picked, 6);
                 setPrepEnd(end);
-            setPrepWeekId(buildWeekIdForDates(picked, weekIds));
+                setPrepWeekId(buildWeekIdForDates(picked, weekIds));
               }}
             />
             <div style={{ fontSize: 12, opacity: 0.75 }}>Date de fin</div>
@@ -1125,25 +1125,32 @@ export default function CockpitWeek() {
                 const picked = e.target.value;
                 if (!picked) return;
                 setPrepEnd(picked);
-            setPrepWeekId(buildWeekIdForDates(prepStart, weekIds));
+                setPrepWeekId(buildWeekIdForDates(prepStart, weekIds));
               }}
             />
             <div style={{ height: 32 }} />
           </div>
         </section>
 
-        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>3 · Proposer les menus</div>
           <button
             onClick={() => generateProposals(week?.week_id)}
             disabled={!week?.week_id}
           >
             Proposer menus
           </button>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>
+            Les recettes non validées seront remplacées.
+          </div>
         </section>
 
-        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontWeight: 700 }}>Sauvegarder sur Drive</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>4 · Sauvegarder puis Upload</div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>
+            Valide une recette → Sauvegarde → Upload.
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
             <IconButton
               icon="☁️⬆️"
               label="Upload sur Drive"
