@@ -384,8 +384,19 @@ export default function Home() {
         />
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button onClick={() => setConstraintsOpen(true)}>Contraintes</button>
-          <button onClick={() => navigate("/weeks")}>Générer semaine</button>
+          <button
+            onClick={() => navigate("/weeks")}
+            style={{
+              background: "#16a34a",
+              color: "#fff",
+              border: "1px solid #15803d",
+              borderRadius: 6,
+              padding: "6px 10px",
+              fontWeight: 600
+            }}
+          >
+            Générer semaine
+          </button>
         </div>
       </div>
 
@@ -497,7 +508,21 @@ export default function Home() {
         </div>
       </div>
 
-      <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
+          <button
+            onClick={() => setConstraintsOpen(true)}
+            style={{
+              fontSize: 12,
+              padding: "4px 8px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              background: "#f9fafb"
+            }}
+          >
+            Contraintes
+          </button>
+        </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
           <button onClick={onRescanDrive}>
             Rescan recettes{rescanRequired ? " ⚠️" : ""}
