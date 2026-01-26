@@ -919,7 +919,10 @@ router.get("/usage/all", async (_req, res) => {
       const raw = await readJson(path.join(CHAT_DIR, f));
       out.push({
         week_id: raw.week_id,
-        total_tokens: raw.usage_totals?.total_tokens ?? 0
+        total_tokens: raw.usage_totals?.total_tokens ?? 0,
+        usage_totals: raw.usage_totals || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+        usage_by_model: raw.usage_by_model || {},
+        updated_at: raw.updated_at || null
       });
     }
 
