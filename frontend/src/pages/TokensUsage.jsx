@@ -4,10 +4,11 @@ import axios from "axios";
 function TokensGraph({ data }) {
   if (!data?.length) return null;
   const max = Math.max(...data.map((d) => d.tokens), 1);
+  const baseTextSize = 14;
 
   return (
     <div style={{ marginTop: 16 }}>
-      <div style={{ fontSize: 13, marginBottom: 6 }}>
+      <div style={{ fontSize: baseTextSize, marginBottom: 6 }}>
         Évolution des tokens par semaine
       </div>
       <div
@@ -51,13 +52,37 @@ function toCsv(rows) {
   return [header, ...lines].join("\n");
 }
 
+const MODEL_PRICES_PER_MILLION = {
+  "gpt-5.2": { input: 1.75, output: 14.0 },
+  "gpt-5.2-chat-latest": { input: 1.75, output: 14.0 },
+  "gpt-5.2-codex": { input: 1.75, output: 14.0 },
+  "gpt-5.2-pro": { input: 21.0, output: 168.0 },
+  "gpt-5.1": { input: 1.25, output: 10.0 },
+  "gpt-5.1-chat-latest": { input: 1.25, output: 10.0 },
+  "gpt-5.1-codex": { input: 1.25, output: 10.0 },
+  "gpt-5.1-codex-max": { input: 1.25, output: 10.0 },
+  "gpt-5": { input: 1.25, output: 10.0 },
+  "gpt-5-chat-latest": { input: 1.25, output: 10.0 },
+  "gpt-5-codex": { input: 1.25, output: 10.0 },
+  "gpt-5-mini": { input: 0.25, output: 2.0 },
+  "gpt-5-nano": { input: 0.05, output: 0.4 }
+};
+
+function estimateCostUSD(inputTokens, outputTokens, model) {
+  const prices = MODEL_PRICES_PER_MILLION[model];
+  if (!prices) return null;
+  const inputCost = (Number(inputTokens || 0) / 1_000_000) * prices.input;
+  const outputCost = (Number(outputTokens || 0) / 1_000_000) * prices.output;
+  return Math.round((inputCost + outputCost) * 100) / 100;
+}
+
 export default function TokensUsage() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [weekStart, setWeekStart] = useState("");
   const [weekEnd, setWeekEnd] = useState("");
   const [modelFilter, setModelFilter] = useState("ALL");
-  const [pricePer1k, setPricePer1k] = useState("");
+  const baseTextSize = 14;
 
   useEffect(() => {
     async function load() {
@@ -112,10 +137,50 @@ export default function TokensUsage() {
   }, [series]);
 
   const costEstimate = useMemo(() => {
-    const rate = Number(pricePer1k);
-    if (!rate) return null;
-    return Math.round((totals.totalTokens / 1000) * rate * 100) / 100;
-  }, [pricePer1k, totals.totalTokens]);
+    if (!filtered.length) return null;
+    if (modelFilter === "ALL") {
+      let total = 0;
+      let hasAny = false;
+      for (const h of filtered) {
+        const byModel = h.usage_by_model || {};
+        for (const [model, usage] of Object.entries(byModel)) {
+          const cost = estimateCostUSD(usage.input_tokens, usage.output_tokens, model);
+          if (cost == null) continue;
+          hasAny = true;
+          total += cost;
+        }
+      }
+      return hasAny ? Math.round(total * 100) / 100 : null;
+    }
+    const agg = filtered.reduce(
+      (acc, h) => {
+        const m = h.usage_by_model?.[modelFilter] || {};
+        acc.input += Number(m.input_tokens || 0);
+        acc.output += Number(m.output_tokens || 0);
+        return acc;
+      },
+      { input: 0, output: 0 }
+    );
+    return estimateCostUSD(agg.input, agg.output, modelFilter);
+  }, [filtered, modelFilter]);
+
+  const unknownModels = useMemo(() => {
+    const set = new Set();
+    const list = modelFilter === "ALL" ? null : [modelFilter];
+    if (list) {
+      list.forEach((m) => {
+        if (!MODEL_PRICES_PER_MILLION[m]) set.add(m);
+      });
+    } else {
+      filtered.forEach((h) => {
+        const byModel = h.usage_by_model || {};
+        Object.keys(byModel).forEach((m) => {
+          if (!MODEL_PRICES_PER_MILLION[m]) set.add(m);
+        });
+      });
+    }
+    return Array.from(set).sort();
+  }, [filtered, modelFilter]);
 
   const exportRows = useMemo(() => {
     return filtered.map((h) => {
@@ -154,12 +219,12 @@ export default function TokensUsage() {
       <h2>Tokens & Usage</h2>
 
       {loading ? (
-        <div>Chargement…</div>
+        <div style={{ fontSize: baseTextSize }}>Chargement…</div>
       ) : (
         <>
           <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: "#555" }}>Période</div>
+              <div style={{ fontSize: baseTextSize, color: "#555" }}>Période</div>
               <div style={{ display: "flex", gap: 8 }}>
                 <select value={weekStart} onChange={(e) => setWeekStart(e.target.value)}>
                   {weekIds.map((id) => (
@@ -179,7 +244,7 @@ export default function TokensUsage() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: "#555" }}>Modèle</div>
+              <div style={{ fontSize: baseTextSize, color: "#555" }}>Modèle</div>
               <select value={modelFilter} onChange={(e) => setModelFilter(e.target.value)}>
                 {availableModels.map((m) => (
                   <option key={m} value={m}>
@@ -213,7 +278,7 @@ export default function TokensUsage() {
 
           <div style={{ display: "flex", gap: 24, marginTop: 16 }}>
             <div>
-              <div style={{ fontSize: 12, color: "#555" }}>
+              <div style={{ fontSize: baseTextSize, color: "#555" }}>
                 Tokens période ({series.length} semaine(s))
               </div>
               <div style={{ fontSize: 22, fontWeight: 600 }}>
@@ -222,7 +287,7 @@ export default function TokensUsage() {
             </div>
 
             <div>
-              <div style={{ fontSize: 12, color: "#555" }}>
+              <div style={{ fontSize: baseTextSize, color: "#555" }}>
                 Tokens semaine courante (période)
               </div>
               <div style={{ fontSize: 22, fontWeight: 600 }}>
@@ -231,19 +296,19 @@ export default function TokensUsage() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: "#555" }}>Coût estimé (€/1k)</div>
-              <input
-                type="number"
-                placeholder="ex: 0.5"
-                value={pricePer1k}
-                onChange={(e) => setPricePer1k(e.target.value)}
-                style={{ width: 120 }}
-              />
+              <div style={{ fontSize: baseTextSize, color: "#555" }}>Coût estimé (USD)</div>
               {costEstimate != null ? (
-                <div style={{ fontSize: 12, opacity: 0.8 }}>
-                  ≈ {costEstimate} €
+                <div style={{ fontSize: baseTextSize, fontWeight: 600 }}>
+                  ≈ ${costEstimate}
                 </div>
-              ) : null}
+              ) : (
+                <div style={{ fontSize: baseTextSize, opacity: 0.7 }}>
+                  Modèle non tarifé{unknownModels.length ? `: ${unknownModels.join(", ")}` : ""}
+                </div>
+              )}
+              <div style={{ fontSize: baseTextSize, opacity: 0.6 }}>
+                Basé sur les tarifs Standard OpenAI (input/output).
+              </div>
             </div>
           </div>
 
