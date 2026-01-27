@@ -288,6 +288,9 @@ export default function CockpitWeek() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState(null);
   const [uploadingWeek, setUploadingWeek] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
 
   // Validated recipe modal
   const [recipeModal, setRecipeModal] = useState(null); // { slot }
@@ -306,13 +309,6 @@ export default function CockpitWeek() {
   const pendingUploadCount = Object.entries(savedRecipeIdsBySlot || {}).filter(
     ([slot, recipeId]) => recipeId && !uploadedRecipeIdsBySlot?.[slot]
   ).length;
-  const noLunchSlotsSet = new Set(
-    week?.rules_readonly?.no_lunch_slots || ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"]
-  );
-  const requiredProposalSlots = PROPOSAL_SLOTS.filter((slot) => !noLunchSlotsSet.has(slot));
-  const slotsWithProposals = requiredProposalSlots.filter(
-    (slot) => (menuProposals?.[slot] || []).length > 0
-  );
 
   // --------------------
   // Loaders
@@ -394,6 +390,73 @@ export default function CockpitWeek() {
     } catch {
       setMenuProposals({});
     }
+  }
+
+  async function sendChatMessage() {
+    if (!week?.week_id) return;
+    const text = chatInput.trim();
+    if (!text) return;
+    const userMsg = { id: `u_${Date.now()}`, role: "user", text };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatInput("");
+    setChatLoading(true);
+    try {
+      const j = await fetchJson("/api/chat/commands/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week_id: week.week_id, message: text })
+      });
+      const assistantMsg = {
+        id: `a_${Date.now()}`,
+        role: "assistant",
+        text: j.summary || "Proposition prête.",
+        action: j.action || null,
+        status: "pending"
+      };
+      setChatMessages((prev) => [...prev, assistantMsg]);
+    } catch (e) {
+      setChatMessages((prev) => [
+        ...prev,
+        { id: `e_${Date.now()}`, role: "assistant", text: `Erreur: ${e.message}` }
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  async function applyChatAction(messageId, action) {
+    if (!week?.week_id || !action) return;
+    try {
+      const j = await fetchJson("/api/chat/commands/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week_id: week.week_id, action })
+      });
+      if (j?.menu_proposals) {
+        setMenuProposals((prev) => ({ ...prev, ...j.menu_proposals }));
+      }
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, status: "applied", text: `${m.text} ✅` } : m
+        )
+      );
+    } catch (e) {
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, status: "error", text: `${m.text} (Erreur: ${e.message})` }
+            : m
+        )
+      );
+    }
+  }
+
+  function rejectChatAction(messageId) {
+    setChatMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId ? { ...m, status: "rejected", text: `${m.text} ❌` } : m
+      )
+    );
   }
 
   async function generateProposals(weekId) {
@@ -1456,6 +1519,86 @@ export default function CockpitWeek() {
         </tbody>
       </table>
       </main>
+
+      <aside
+        style={{
+          width: 280,
+          flexShrink: 0,
+          border: "1px solid #eee",
+          borderRadius: 10,
+          padding: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          maxHeight: "calc(100vh - 32px)"
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>Chat</div>
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            border: "1px solid #f0f0f0",
+            borderRadius: 8,
+            padding: 8,
+            background: "#fafafa"
+          }}
+        >
+          {chatMessages.length === 0 ? (
+            <div style={{ fontSize: 16, opacity: 0.7 }}>
+              Dis-moi ce que tu veux changer (ex: “Pour mercredi dîner, je veux raclette”).
+            </div>
+          ) : (
+            chatMessages.map((m) => (
+              <div
+                key={m.id}
+                style={{
+                  marginBottom: 8,
+                  textAlign: m.role === "user" ? "right" : "left"
+                }}
+              >
+                <div
+                  style={{
+                    display: "inline-block",
+                    padding: "6px 8px",
+                    borderRadius: 8,
+                    background: m.role === "user" ? "#e0ecff" : "#fff",
+                    border: "1px solid #e5e7eb",
+                    fontSize: 16
+                  }}
+                >
+                  {m.text}
+                </div>
+                {m.action && m.status === "pending" ? (
+                  <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+                    <button onClick={() => applyChatAction(m.id, m.action)}>Valider</button>
+                    <button onClick={() => rejectChatAction(m.id)}>Refuser</button>
+                  </div>
+                ) : null}
+              </div>
+            ))
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            type="text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            placeholder="Écrire une demande..."
+            style={{ flex: 1, fontSize: 16 }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") sendChatMessage();
+            }}
+          />
+          <button
+            onClick={sendChatMessage}
+            disabled={chatLoading || !chatInput.trim()}
+            style={{ fontSize: 16 }}
+          >
+            Envoyer
+          </button>
+        </div>
+      </aside>
 
       {proposalModal && (
         <div
