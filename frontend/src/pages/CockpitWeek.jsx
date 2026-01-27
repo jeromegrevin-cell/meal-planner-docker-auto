@@ -43,6 +43,34 @@ const PROPOSAL_SLOTS = ALL_SLOTS.filter(
   (slot) => !FREE_TEXT_ALLOWED_SLOTS.has(slot)
 );
 
+function slotPrefixFromDate(dateObj) {
+  const day = dateObj.getUTCDay();
+  const map = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  return map[day];
+}
+
+function activeSlotsFromRange(dateStart, dateEnd) {
+  if (!dateStart || !dateEnd) return ALL_SLOTS;
+  const out = [];
+  const seen = new Set();
+  const start = new Date(`${dateStart}T00:00:00Z`);
+  const end = new Date(`${dateEnd}T00:00:00Z`);
+  for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86400000)) {
+    const prefix = slotPrefixFromDate(d);
+    const lunch = `${prefix}_lunch`;
+    const dinner = `${prefix}_dinner`;
+    if (!seen.has(lunch)) {
+      out.push(lunch);
+      seen.add(lunch);
+    }
+    if (!seen.has(dinner)) {
+      out.push(dinner);
+      seen.add(dinner);
+    }
+  }
+  return out;
+}
+
 const DEFAULT_CHILD_BIRTH_MONTH = "2016-08";
 const DEFAULT_PEOPLE = {
   adults: 2,
@@ -296,6 +324,8 @@ export default function CockpitWeek() {
   const [shoppingError, setShoppingError] = useState(null);
   const [shoppingList, setShoppingList] = useState(null);
   const [pantryChecked, setPantryChecked] = useState({});
+  const [keepMode, setKeepMode] = useState("shopping");
+  const [keepText, setKeepText] = useState("");
 
   // Validated recipe modal
   const [recipeModal, setRecipeModal] = useState(null); // { slot }
@@ -308,7 +338,12 @@ export default function CockpitWeek() {
   // --------------------
   const tableRows = useMemo(() => {
     const slotsObj = week?.slots || {};
-    return ALL_SLOTS.map((slot) => [slot, slotsObj[slot] || null]);
+    const activeSlots =
+      week?.rules_readonly?.active_slots && week.rules_readonly.active_slots.length
+        ? week.rules_readonly.active_slots
+        : activeSlotsFromRange(week?.date_start, week?.date_end);
+    const ordered = activeSlots.filter((s) => ALL_SLOTS.includes(s));
+    return ordered.map((slot) => [slot, slotsObj[slot] || null]);
   }, [week]);
 
   const pendingUploadCount = Object.entries(savedRecipeIdsBySlot || {}).filter(
@@ -464,8 +499,9 @@ export default function CockpitWeek() {
     );
   }
 
-  async function openShoppingList() {
+  async function openShoppingList(mode = "shopping") {
     if (!week?.week_id) return;
+    setKeepMode(mode);
     setShoppingOpen(true);
     setShoppingLoading(true);
     setShoppingError(null);
@@ -474,6 +510,25 @@ export default function CockpitWeek() {
         `/api/weeks/${encodeURIComponent(week.week_id)}/shopping-list`
       );
       setShoppingList(j);
+      // Prefetch validated recipes so Keep export has content.
+      const slots = j?.week?.slots || {};
+      const recipeIds = Array.from(
+        new Set(
+          Object.values(slots)
+            .filter((s) => s?.validated === true && s?.recipe_id)
+            .map((s) => s.recipe_id)
+        )
+      );
+      for (const rid of recipeIds) {
+        await loadRecipe(rid);
+      }
+      if (mode === "menus") {
+        setKeepText(buildKeepMenuText(j));
+      } else if (mode === "recipes") {
+        setKeepText(buildKeepRecipesText(j));
+      } else {
+        setKeepText(buildKeepShoppingText(j));
+      }
       const next = {};
       (j.items || []).forEach((it) => {
         const key = `${it.item}__${it.unit || ""}`;
@@ -485,6 +540,144 @@ export default function CockpitWeek() {
     } finally {
       setShoppingLoading(false);
     }
+  }
+
+  function toAscii(text) {
+    return String(text || "")
+      .replace(/œ/g, "oe")
+      .replace(/Œ/g, "OE")
+      .replace(/æ/g, "ae")
+      .replace(/Æ/g, "AE")
+      .replace(/[’‘]/g, "'")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\x00-\x7F]/g, "");
+  }
+
+  function buildKeepMenuText(listData) {
+    if (!listData?.week?.date_start || !listData?.week?.date_end) return "";
+    const title = `MENU LIST (${listData.week.week_id})`;
+    const lines = [title, ""];
+    const slotsOrder = [
+      "mon_lunch",
+      "mon_dinner",
+      "tue_lunch",
+      "tue_dinner",
+      "wed_lunch",
+      "wed_dinner",
+      "thu_lunch",
+      "thu_dinner",
+      "fri_lunch",
+      "fri_dinner",
+      "sat_lunch",
+      "sat_dinner",
+      "sun_lunch",
+      "sun_dinner"
+    ];
+    const labelMap = {
+      mon_lunch: "Monday Lunch",
+      mon_dinner: "Monday Dinner",
+      tue_lunch: "Tuesday Lunch",
+      tue_dinner: "Tuesday Dinner",
+      wed_lunch: "Wednesday Lunch",
+      wed_dinner: "Wednesday Dinner",
+      thu_lunch: "Thursday Lunch",
+      thu_dinner: "Thursday Dinner",
+      fri_lunch: "Friday Lunch",
+      fri_dinner: "Friday Dinner",
+      sat_lunch: "Saturday Lunch",
+      sat_dinner: "Saturday Dinner",
+      sun_lunch: "Sunday Lunch",
+      sun_dinner: "Sunday Dinner"
+    };
+    const slots = listData.week.slots || {};
+    for (const slot of slotsOrder) {
+      const s = slots[slot] || {};
+      const titleRaw = s.free_text || s.recipe_id || "";
+      const title = titleRaw ? titleRaw : "XXXX";
+      lines.push(`${labelMap[slot]}: ${title}`);
+    }
+    return toAscii(lines.join("\n"));
+  }
+
+  function buildKeepShoppingText(listData) {
+    const weekId = listData?.week?.week_id || "Semaine";
+    const lines = [`LISTE DE COURSES - ${weekId}`, ""];
+    lines.push("INGREDIENT | QUANTITE A ACHETER | RECETTES CONCERNEES");
+    lines.push("");
+    const items = listData?.items || [];
+    const grouped = {};
+    items.forEach((it) => {
+      const name = toAscii(it.item || "");
+      if (!grouped["GENERAL"]) grouped["GENERAL"] = [];
+      grouped["GENERAL"].push({
+        item: name,
+        qty: toAscii(it.qty || ""),
+        unit: toAscii(it.unit || ""),
+        recipes: toAscii((it.recipes || []).join(", "))
+      });
+    });
+    Object.keys(grouped).forEach((cat) => {
+      lines.push(cat);
+      grouped[cat].forEach((it) => {
+        const qty = [it.qty, it.unit].filter(Boolean).join(" ").trim();
+        const recipes = it.recipes || "";
+        lines.push(`- ${it.item} | ${qty} | ${recipes}`);
+      });
+      lines.push("");
+    });
+    return toAscii(lines.join("\n")).trim();
+  }
+
+  function buildKeepRecipesText(listData) {
+    const weekId = listData?.week?.week_id || "Semaine";
+    const lines = [`RECETTES - ${weekId}`, ""];
+    const slots = listData?.week?.slots || {};
+    const recipeIds = Array.from(
+      new Set(
+        Object.values(slots)
+          .filter((s) => s?.validated === true && s?.recipe_id)
+          .map((s) => s.recipe_id)
+      )
+    );
+    if (!recipeIds.length) {
+      lines.push("AUCUNE RECETTE VALIDEE");
+      return toAscii(lines.join("\n"));
+    }
+    recipeIds.forEach((rid, idx) => {
+      const recipe = recipeCache?.[rid];
+      const title = toAscii(recipe?.title || rid);
+      lines.push(title);
+      lines.push("");
+      const desc = toAscii(recipe?.content?.description_courte || "");
+      if (desc) lines.push(desc);
+      if (desc) lines.push("");
+      const ingredients = Array.isArray(recipe?.content?.ingredients)
+        ? recipe.content.ingredients
+        : [];
+      if (ingredients.length) {
+        lines.push("INGREDIENTS");
+        ingredients.forEach((ing) => {
+          const qty = toAscii(ing?.qty || "");
+          const unit = toAscii(ing?.unit || "");
+          const item = toAscii(ing?.item || "");
+          const q = [qty, unit].filter(Boolean).join(" ").trim();
+          lines.push(`- ${q ? `${q} ` : ""}${item}`.trim());
+        });
+        lines.push("");
+      }
+      const steps = Array.isArray(recipe?.content?.preparation_steps)
+        ? recipe.content.preparation_steps
+        : [];
+      if (steps.length) {
+        lines.push("ETAPES");
+        steps.forEach((step, sidx) => {
+          lines.push(`${sidx + 1}. ${toAscii(step)}`);
+        });
+      }
+      if (idx < recipeIds.length - 1) lines.push("", "-----", "");
+    });
+    return toAscii(lines.join("\n"));
   }
 
   async function generateProposals(weekId) {
@@ -535,8 +728,12 @@ export default function CockpitWeek() {
       await loadWeeksList();
       const currentWeek = await onChangeWeek(computedWeekId);
       const weekSlots = currentWeek?.slots || {};
+      const activeSlots =
+        currentWeek?.rules_readonly?.active_slots && currentWeek.rules_readonly.active_slots.length
+          ? currentWeek.rules_readonly.active_slots
+          : activeSlotsFromRange(currentWeek?.date_start, currentWeek?.date_end);
       const slotsToGenerate = PROPOSAL_SLOTS.filter(
-        (slot) => !(weekSlots[slot]?.validated === true)
+        (slot) => activeSlots.includes(slot) && !(weekSlots[slot]?.validated === true)
       );
       if (slotsToGenerate.length === 0) {
         alert("Toutes les propositions sont déjà validées.");
@@ -566,9 +763,14 @@ export default function CockpitWeek() {
       await loadWeeksList();
       const w = await loadCurrentWeek();
 
+      const activeSlots =
+        w?.rules_readonly?.active_slots && w.rules_readonly.active_slots.length
+          ? w.rules_readonly.active_slots
+          : activeSlotsFromRange(w?.date_start, w?.date_end);
       const first =
-        ALL_SLOTS.find((k) => (w?.slots?.[k]?.validated === true)) ||
-        ALL_SLOTS.find((k) => w?.slots?.[k]?.recipe_id) ||
+        activeSlots.find((k) => (w?.slots?.[k]?.validated === true)) ||
+        activeSlots.find((k) => w?.slots?.[k]?.recipe_id) ||
+        activeSlots[0] ||
         "mon_dinner";
 
       setSelectedSlot(first);
@@ -612,9 +814,14 @@ export default function CockpitWeek() {
   async function onChangeWeek(id) {
     const w = await loadWeek(id);
 
+    const activeSlots =
+      w?.rules_readonly?.active_slots && w.rules_readonly.active_slots.length
+        ? w.rules_readonly.active_slots
+        : activeSlotsFromRange(w?.date_start, w?.date_end);
     const first =
-      ALL_SLOTS.find((k) => (w?.slots?.[k]?.validated === true)) ||
-      ALL_SLOTS.find((k) => w?.slots?.[k]?.recipe_id) ||
+      activeSlots.find((k) => (w?.slots?.[k]?.validated === true)) ||
+      activeSlots.find((k) => w?.slots?.[k]?.recipe_id) ||
+      activeSlots[0] ||
       "mon_dinner";
 
     setSelectedSlot(first);
@@ -1177,10 +1384,10 @@ export default function CockpitWeek() {
           flexShrink: 0,
           display: "flex",
           flexDirection: "column",
-          gap: 18
+          gap: 10
         }}
       >
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
           <div style={{ fontWeight: 700, marginBottom: 10 }}>
             1 · Choisir une semaine
           </div>
@@ -1200,7 +1407,7 @@ export default function CockpitWeek() {
           ) : null}
         </section>
 
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
           <div style={{ fontWeight: 700, marginBottom: 10 }}>
             2 · Créer une nouvelle semaine
           </div>
@@ -1235,17 +1442,18 @@ export default function CockpitWeek() {
                 setPrepWeekId(buildWeekIdForDates(prepStart, weekIds));
               }}
             />
-            <div style={{ height: 8 }} />
+            <div style={{ height: 4 }} />
           </div>
         </section>
 
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
           <div style={{ fontWeight: 700, marginBottom: 10 }}>
             3 · Proposer les menus
           </div>
           <button
             onClick={() => generateProposals(week?.week_id)}
             disabled={!week?.week_id}
+            style={{ fontSize: 12, padding: "3px 6px" }}
           >
             Proposer menus
           </button>
@@ -1254,20 +1462,27 @@ export default function CockpitWeek() {
           </div>
         </section>
 
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
           <div style={{ fontWeight: 700, marginBottom: 10 }}>
             4 · Upload
           </div>
-          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
-            Upload to Drive/Recettes
+          <div
+            onClick={onUploadWeek}
+            style={{
+              fontSize: 12,
+              opacity: 0.9,
+              marginTop: 6,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: week?.week_id && !uploadingWeek ? "pointer" : "default",
+              userSelect: "none"
+            }}
+          >
+            <span>Upload to Drive/Recettes</span>
+            <span style={{ fontSize: 16 }}>☁️⬆️</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-            <IconButton
-              icon="☁️⬆️"
-              label="Upload sur Drive"
-              onClick={onUploadWeek}
-              disabled={!week?.week_id || uploadingWeek}
-            />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
             {pendingUploadCount > 0 ? (
               <span style={{ fontSize: 12, opacity: 0.8 }}>
                 {pendingUploadCount}
@@ -1276,16 +1491,34 @@ export default function CockpitWeek() {
           </div>
         </section>
 
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
           <div style={{ fontWeight: 700, marginBottom: 10 }}>
-            5 · Liste de courses
+            5 · Listes
           </div>
           <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
-            Filtrer ce que tu as deja au placard.
+            Exports Keep-safe (menus, recettes, courses).
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-            <button onClick={openShoppingList} disabled={!week?.week_id}>
-              Liste de courses
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            <button
+              onClick={() => openShoppingList("menus")}
+              disabled={!week?.week_id}
+              style={{ fontSize: 12, padding: "3px 6px" }}
+            >
+              Menus
+            </button>
+            <button
+              onClick={() => openShoppingList("recipes")}
+              disabled={!week?.week_id}
+              style={{ fontSize: 12, padding: "3px 6px" }}
+            >
+              Recettes
+            </button>
+            <button
+              onClick={() => openShoppingList("shopping")}
+              disabled={!week?.week_id}
+              style={{ fontSize: 12, padding: "3px 6px" }}
+            >
+              Courses
             </button>
           </div>
         </section>
@@ -1785,7 +2018,25 @@ export default function CockpitWeek() {
             }}
           >
             <div style={{ display: "flex", alignItems: "center" }}>
-              <div style={{ fontWeight: 800 }}>Liste de courses</div>
+              <div style={{ fontWeight: 800 }}>
+                {keepMode === "menus"
+                  ? "Menus"
+                  : keepMode === "recipes"
+                    ? "Recettes"
+                    : "Courses"}
+              </div>
+              {keepText ? (
+                <button
+                  onClick={() => {
+                    try {
+                      navigator.clipboard.writeText(keepText);
+                    } catch (_e) {}
+                  }}
+                  style={{ marginLeft: 10, fontSize: 11 }}
+                >
+                  Copier
+                </button>
+              ) : null}
               <button
                 onClick={() => setShoppingOpen(false)}
                 aria-label="Fermer"
@@ -1821,6 +2072,14 @@ export default function CockpitWeek() {
                     pour generer la liste de courses.
                   </div>
                 )}
+                {keepText ? (
+                  <textarea
+                    readOnly
+                    value={keepText}
+                    rows={10}
+                    style={{ width: "100%", fontFamily: "monospace", fontSize: 12 }}
+                  />
+                ) : null}
                 <div style={{ maxHeight: 360, overflowY: "auto" }}>
                   {(shoppingList?.items || []).map((it, idx) => {
                     const key = `${it.item}__${it.unit || ""}`;

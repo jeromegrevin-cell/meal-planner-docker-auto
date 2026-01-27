@@ -89,6 +89,33 @@ function parseQty(raw) {
   return Number.isFinite(v) ? v : null;
 }
 
+function slotPrefixFromDate(dateObj) {
+  const day = dateObj.getUTCDay(); // 0=Sun
+  const map = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  return map[day];
+}
+
+function activeSlotsFromRange(dateStart, dateEnd) {
+  const out = [];
+  const seen = new Set();
+  const start = new Date(`${dateStart}T00:00:00Z`);
+  const end = new Date(`${dateEnd}T00:00:00Z`);
+  for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86400000)) {
+    const prefix = slotPrefixFromDate(d);
+    const lunch = `${prefix}_lunch`;
+    const dinner = `${prefix}_dinner`;
+    if (!seen.has(lunch)) {
+      out.push(lunch);
+      seen.add(lunch);
+    }
+    if (!seen.has(dinner)) {
+      out.push(dinner);
+      seen.add(dinner);
+    }
+  }
+  return out.filter((s) => ALLOWED_SLOTS.has(s));
+}
+
 async function listWeekFiles() {
   await ensureDir(WEEKS_DIR);
   const files = await fs.readdir(WEEKS_DIR);
@@ -328,6 +355,8 @@ router.post("/prepare", async (req, res) => {
       return res.status(409).json({ error: "week_exists", week: existing });
     }
 
+    const activeSlots = activeSlotsFromRange(dateStart, dateEnd);
+
     // IMPORTANT: slots vides, validated=false partout.
     const week = {
       week_id: weekId,
@@ -336,12 +365,13 @@ router.post("/prepare", async (req, res) => {
       timezone: "Europe/Paris",
       rules_readonly: {
         no_lunch_slots: ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"],
+        active_slots: activeSlots,
         main_ingredient_max_per_week: 2,
         main_ingredient_min_day_gap_if_used_twice: 2,
         seasonality_required: true
       },
       slots: Object.fromEntries(
-        Array.from(ALLOWED_SLOTS).map((slot) => [
+        activeSlots.map((slot) => [
           slot,
           { recipe_id: null, free_text: "", validated: false, people: defaultPeople() }
         ])
@@ -736,7 +766,8 @@ router.get("/:week_id/shopping-list", async (req, res) => {
       ok: true,
       week_id: week.week_id,
       items,
-      missing_recipes: missingRecipes
+      missing_recipes: missingRecipes,
+      week
     });
   } catch (e) {
     const status = e?.code === "ENOENT" ? 404 : 500;
@@ -751,6 +782,18 @@ router.get("/:week_id/shopping-list", async (req, res) => {
 router.get("/:week_id", async (req, res) => {
   try {
     const week = await loadWeek(req.params.week_id);
+    const hasActiveSlots =
+      Array.isArray(week?.rules_readonly?.active_slots) &&
+      week.rules_readonly.active_slots.length > 0;
+    if (!hasActiveSlots && week?.date_start && week?.date_end) {
+      const activeSlots = activeSlotsFromRange(week.date_start, week.date_end);
+      week.rules_readonly = {
+        ...(week.rules_readonly || {}),
+        active_slots: activeSlots
+      };
+      week.updated_at = nowIso();
+      await writeJson(path.join(WEEKS_DIR, `${week.week_id}.json`), week);
+    }
     res.json(week);
   } catch (e) {
     const status = e?.code === "ENOENT" ? 404 : 500;
