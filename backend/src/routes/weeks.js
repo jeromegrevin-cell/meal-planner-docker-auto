@@ -72,6 +72,23 @@ function compareISODate(a, b) {
   return ta - tb;
 }
 
+function normalizeIngredientKey(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function parseQty(raw) {
+  const s = String(raw || "").trim().replace(",", ".");
+  if (!s) return null;
+  if (!/^\d+(\.\d+)?$/.test(s)) return null;
+  const v = Number(s);
+  return Number.isFinite(v) ? v : null;
+}
+
 async function listWeekFiles() {
   await ensureDir(WEEKS_DIR);
   const files = await fs.readdir(WEEKS_DIR);
@@ -639,6 +656,91 @@ router.get("/:week_id/audit", async (req, res) => {
   } catch (e) {
     const status = e?.code === "ENOENT" ? 404 : 500;
     res.status(status).json({ error: "week_audit_failed", details: e.message });
+  }
+});
+
+/**
+ * GET /api/weeks/:week_id/shopping-list
+ * Returns aggregated ingredients for validated recipes.
+ */
+router.get("/:week_id/shopping-list", async (req, res) => {
+  try {
+    const week = await loadWeek(req.params.week_id);
+    const slots = week.slots || {};
+    const itemsMap = new Map();
+    const missingRecipes = [];
+    const usedRecipes = new Set();
+
+    for (const [slot, s] of Object.entries(slots)) {
+      if (s?.validated !== true) continue;
+      const recipeId = s?.recipe_id || null;
+      if (!recipeId) {
+        if (s?.free_text) {
+          missingRecipes.push({ slot, title: s.free_text });
+        }
+        continue;
+      }
+      if (usedRecipes.has(recipeId)) continue;
+      usedRecipes.add(recipeId);
+      let recipe = null;
+      try {
+        recipe = await readJson(path.join(RECIPES_DIR, `${recipeId}.json`));
+      } catch {
+        missingRecipes.push({ slot, title: recipeId });
+        continue;
+      }
+      const ingredients = Array.isArray(recipe?.content?.ingredients)
+        ? recipe.content.ingredients
+        : [];
+      for (const ing of ingredients) {
+        const item = String(ing?.item || "").trim();
+        if (!item) continue;
+        const unit = String(ing?.unit || "").trim();
+        const qtyRaw = String(ing?.qty || "").trim();
+        const key = `${normalizeIngredientKey(item)}|${normalizeIngredientKey(unit)}`;
+        if (!itemsMap.has(key)) {
+          itemsMap.set(key, {
+            item,
+            unit,
+            qtys: [],
+            recipes: new Set()
+          });
+        }
+        const entry = itemsMap.get(key);
+        if (qtyRaw) entry.qtys.push(qtyRaw);
+        entry.recipes.add(recipe?.title || recipeId);
+      }
+    }
+
+    const items = [];
+    for (const entry of itemsMap.values()) {
+      const qtyNums = entry.qtys.map(parseQty).filter((v) => v != null);
+      let qty = "";
+      if (qtyNums.length === entry.qtys.length && qtyNums.length > 0) {
+        const sum = qtyNums.reduce((a, b) => a + b, 0);
+        qty = String(sum);
+      } else if (entry.qtys.length > 0) {
+        qty = Array.from(new Set(entry.qtys)).join(" + ");
+      }
+      items.push({
+        item: entry.item,
+        unit: entry.unit,
+        qty,
+        recipes: Array.from(entry.recipes)
+      });
+    }
+
+    items.sort((a, b) => a.item.localeCompare(b.item));
+
+    res.json({
+      ok: true,
+      week_id: week.week_id,
+      items,
+      missing_recipes: missingRecipes
+    });
+  } catch (e) {
+    const status = e?.code === "ENOENT" ? 404 : 500;
+    res.status(status).json({ error: "shopping_list_failed", details: e.message });
   }
 });
 

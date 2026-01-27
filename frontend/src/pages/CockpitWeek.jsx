@@ -291,6 +291,11 @@ export default function CockpitWeek() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [shoppingOpen, setShoppingOpen] = useState(false);
+  const [shoppingLoading, setShoppingLoading] = useState(false);
+  const [shoppingError, setShoppingError] = useState(null);
+  const [shoppingList, setShoppingList] = useState(null);
+  const [pantryChecked, setPantryChecked] = useState({});
 
   // Validated recipe modal
   const [recipeModal, setRecipeModal] = useState(null); // { slot }
@@ -457,6 +462,29 @@ export default function CockpitWeek() {
         m.id === messageId ? { ...m, status: "rejected", text: `${m.text} ❌` } : m
       )
     );
+  }
+
+  async function openShoppingList() {
+    if (!week?.week_id) return;
+    setShoppingOpen(true);
+    setShoppingLoading(true);
+    setShoppingError(null);
+    try {
+      const j = await fetchJson(
+        `/api/weeks/${encodeURIComponent(week.week_id)}/shopping-list`
+      );
+      setShoppingList(j);
+      const next = {};
+      (j.items || []).forEach((it) => {
+        const key = `${it.item}__${it.unit || ""}`;
+        next[key] = false;
+      });
+      setPantryChecked(next);
+    } catch (e) {
+      setShoppingError(e.message || String(e));
+    } finally {
+      setShoppingLoading(false);
+    }
   }
 
   async function generateProposals(weekId) {
@@ -1207,7 +1235,7 @@ export default function CockpitWeek() {
                 setPrepWeekId(buildWeekIdForDates(prepStart, weekIds));
               }}
             />
-            <div style={{ height: 32 }} />
+            <div style={{ height: 8 }} />
           </div>
         </section>
 
@@ -1245,6 +1273,20 @@ export default function CockpitWeek() {
                 {pendingUploadCount}
               </span>
             ) : null}
+          </div>
+        </section>
+
+        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+            5 · Liste de courses
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
+            Filtrer ce que tu as deja au placard.
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+            <button onClick={openShoppingList} disabled={!week?.week_id}>
+              Liste de courses
+            </button>
           </div>
         </section>
       </aside>
@@ -1715,6 +1757,114 @@ export default function CockpitWeek() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {shoppingOpen && (
+        <div
+          onClick={() => setShoppingOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.25)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(760px, 96vw)",
+              background: "#fff",
+              borderRadius: 10,
+              padding: 16,
+              border: "1px solid #ddd"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{ fontWeight: 800 }}>Liste de courses</div>
+              <button
+                onClick={() => setShoppingOpen(false)}
+                aria-label="Fermer"
+                style={{
+                  marginLeft: "auto",
+                  padding: 0,
+                  fontSize: 18,
+                  lineHeight: 1,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer"
+                }}
+              >
+                x
+              </button>
+            </div>
+
+            {shoppingLoading && (
+              <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
+            )}
+            {shoppingError && (
+              <div style={{ marginTop: 8, color: "#a00" }}>{shoppingError}</div>
+            )}
+
+            {!shoppingLoading && !shoppingError && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
+                  Coche ce que tu as deja au placard. Le reste = a acheter.
+                </div>
+                {(!shoppingList?.items || shoppingList.items.length === 0) && (
+                  <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
+                    Aucune recette validee avec ingredients. Valide une recette
+                    pour generer la liste de courses.
+                  </div>
+                )}
+                <div style={{ maxHeight: 360, overflowY: "auto" }}>
+                  {(shoppingList?.items || []).map((it, idx) => {
+                    const key = `${it.item}__${it.unit || ""}`;
+                    const checked = !!pantryChecked[key];
+                    return (
+                      <label
+                        key={`${key}-${idx}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "4px 0",
+                          opacity: checked ? 0.5 : 1
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setPantryChecked((prev) => ({
+                              ...prev,
+                              [key]: e.target.checked
+                            }))
+                          }
+                        />
+                        <span style={{ textDecoration: checked ? "line-through" : "none" }}>
+                          {it.qty ? `${it.qty} ` : ""}
+                          {it.unit ? `${it.unit} ` : ""}
+                          {it.item}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {(shoppingList?.missing_recipes || []).length > 0 && (
+                  <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
+                    Recettes sans ingredients:{" "}
+                    {(shoppingList.missing_recipes || [])
+                      .map((r) => r.title)
+                      .join(", ")}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
