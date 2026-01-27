@@ -956,6 +956,26 @@ export default function CockpitWeek() {
     }
   }
 
+  async function onReproposeValidated(slot) {
+    if (!week?.week_id) return;
+    try {
+      await fetchJson(
+        `/api/weeks/${encodeURIComponent(week.week_id)}/slots/${encodeURIComponent(slot)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ validated: false })
+        }
+      );
+      const w = await loadWeek(week.week_id);
+      setWeek(w);
+      if (slot === selectedSlot) setRecipe(null);
+      await onOtherProposal(slot);
+    } catch (e) {
+      alert(`Reproposer failed: ${e.message}`);
+    }
+  }
+
   async function onOtherProposal(slot) {
     if (!week?.week_id) return;
     setProposalErrorBySlot((prev) => ({ ...prev, [slot]: null }));
@@ -1570,40 +1590,44 @@ export default function CockpitWeek() {
                     {getSlotLabel(slot)}
                   </div>
 
-                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-                    {totalPeople} pers.
-                  </div>
+                  {!isValidated && !FREE_TEXT_ALLOWED_SLOTS.has(slot) && (
+                    <>
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
+                        {totalPeople} pers.
+                      </div>
 
-                  <div
-                    style={{ display: "flex", gap: 6, marginTop: 6 }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <select
-                      value={people.adults}
-                      onChange={(e) =>
-                        onPeopleChange(slot, Number(e.target.value), people.children)
-                      }
-                    >
-                      {[1, 2, 3, 4].map((v) => (
-                        <option key={`a-${slot}-${v}`} value={v}>
-                          {v}A
-                        </option>
-                      ))}
-                    </select>
+                      <div
+                        style={{ display: "flex", gap: 6, marginTop: 6 }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <select
+                          value={people.adults}
+                          onChange={(e) =>
+                            onPeopleChange(slot, Number(e.target.value), people.children)
+                          }
+                        >
+                          {[1, 2, 3, 4].map((v) => (
+                            <option key={`a-${slot}-${v}`} value={v}>
+                              {v}A
+                            </option>
+                          ))}
+                        </select>
 
-                    <select
-                      value={people.children}
-                      onChange={(e) =>
-                        onPeopleChange(slot, people.adults, Number(e.target.value))
-                      }
-                    >
-                      {[0, 1, 2, 3].map((v) => (
-                        <option key={`c-${slot}-${v}`} value={v}>
-                          {v}E
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                        <select
+                          value={people.children}
+                          onChange={(e) =>
+                            onPeopleChange(slot, people.adults, Number(e.target.value))
+                          }
+                        >
+                          {[0, 1, 2, 3].map((v) => (
+                            <option key={`c-${slot}-${v}`} value={v}>
+                              {v}E
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
                 </td>
 
                 <td style={{ verticalAlign: "top", padding: "10px 6px 10px 0" }}>
@@ -1614,7 +1638,6 @@ export default function CockpitWeek() {
                           {validatedIsDrive ? <DriveIcon size={14} /> : null}
                           {validatedLabel(s)}
                         </span>
-                        {totalPeople ? ` · ${totalPeople} pers.` : ""}
                       </div>
                       <IconButton
                         icon="👁️"
@@ -1632,6 +1655,15 @@ export default function CockpitWeek() {
                           } else if (freeText) {
                             prefetchFreeTextPreview(freeText, slotPeople);
                           }
+                        }}
+                        style={{ padding: "4px 6px" }}
+                      />
+                      <IconButton
+                        icon="🔁"
+                        label="Reproposer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onReproposeValidated(slot);
                         }}
                         style={{ padding: "4px 6px" }}
                       />
@@ -1671,48 +1703,33 @@ export default function CockpitWeek() {
                           />
                         ) : null;
                       })()}
-                      {!saved && (
-                        <IconButton
-                          icon="❌"
-                          label="Dévalider"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDevalidateSlot(slot);
-                          }}
-                          style={{ padding: "4px 6px" }}
-                        />
-                      )}
                     </div>
                   ) : (
                     <>
-                  {canFreeText && (
-                    <textarea
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        marginTop: 6,
-                        padding: 6,
-                        fontSize: 12
-                      }}
-                      rows={2}
-                      value={freeTextBySlot[slot] ?? s?.free_text ?? ""}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) =>
-                        setFreeTextBySlot((prev) => ({
-                          ...prev,
-                          [slot]: e.target.value
-                        }))
-                      }
-                      onBlur={(e) => onFreeTextPersist(slot, e.target.value)}
-                    />
-                  )}
+                      {canFreeText && (
+                        <textarea
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            marginTop: 0,
+                            padding: "2px 6px",
+                            fontSize: 12,
+                            lineHeight: "18px",
+                            height: 24
+                          }}
+                          rows={1}
+                          value={freeTextBySlot[slot] ?? s?.free_text ?? ""}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            setFreeTextBySlot((prev) => ({
+                              ...prev,
+                              [slot]: e.target.value
+                            }))
+                          }
+                          onBlur={(e) => onFreeTextPersist(slot, e.target.value)}
+                        />
+                      )}
 
-                      {showProposals &&
-                        proposals.length > 0 && (
-                          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-                            Propositions
-                          </div>
-                        )}
                       {showProposals && proposalLoading && (
                         <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
                           Génération en cours…
@@ -1724,19 +1741,20 @@ export default function CockpitWeek() {
                         </div>
                       )}
                       {showProposals &&
-                        proposals.map((p) => {
+                        proposals.map((p, idx) => {
                           return (
                             <div
                               key={p.proposal_id}
                               style={{
                                 display: "flex",
                                 gap: 8,
-                                marginTop: 6,
+                                marginTop: idx === 0 ? 0 : 6,
                                 alignItems: "center",
-                                padding: "6px 8px",
+                                padding: "2px 8px",
                                 border: "1px solid #eee",
                                 borderRadius: 6,
-                                background: "#fafafa"
+                                background: "#fafafa",
+                                lineHeight: "18px"
                               }}
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -1860,7 +1878,7 @@ export default function CockpitWeek() {
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             placeholder="Écrire une demande..."
-            style={{ flex: 1, fontSize: 16 }}
+            style={{ flex: 1, fontSize: 12 }}
             onKeyDown={(e) => {
               if (e.key === "Enter") sendChatMessage();
             }}
@@ -1868,7 +1886,7 @@ export default function CockpitWeek() {
           <button
             onClick={sendChatMessage}
             disabled={chatLoading || !chatInput.trim()}
-            style={{ fontSize: 16 }}
+            style={{ fontSize: 12 }}
           >
             Envoyer
           </button>
