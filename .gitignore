@@ -49,6 +49,7 @@ recipes_list.csv
 recipes_nutrition.csv
 drive_ocr_gaps.txt
 flan_ocr-1.png
+backend/data/constraints.json
 
 # --------------------
 # Temporary / backup

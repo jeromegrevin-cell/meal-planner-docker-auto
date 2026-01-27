@@ -10,6 +10,7 @@ const router = express.Router();
 
 const CHAT_DIR = path.join(DATA_DIR, "chat_sessions");
 const RECIPES_DIR = path.join(DATA_DIR, "recipes");
+const CONSTRAINTS_PATH = path.join(DATA_DIR, "constraints.json");
 const CHAT_PERSIST = process.env.CHAT_PERSIST !== "0";
 const CHAT_RETENTION_DAYS = Number(process.env.CHAT_RETENTION_DAYS || 0);
 
@@ -52,6 +53,31 @@ function nowIso() {
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
+}
+
+async function readConstraints() {
+  try {
+    const raw = await readJson(CONSTRAINTS_PATH);
+    return {
+      global: Array.isArray(raw?.global) ? raw.global : [],
+      weeks: typeof raw?.weeks === "object" && raw?.weeks ? raw.weeks : {}
+    };
+  } catch {
+    return { global: [], weeks: {} };
+  }
+}
+
+async function writeConstraints(next) {
+  const payload = {
+    global: Array.isArray(next?.global) ? next.global : [],
+    weeks: typeof next?.weeks === "object" && next?.weeks ? next.weeks : {}
+  };
+  await writeJson(CONSTRAINTS_PATH, payload);
+  return payload;
+}
+
+function normalizeConstraint(text) {
+  return String(text || "").trim().replace(/\s+/g, " ");
 }
 
 async function listLocalRecipes() {
@@ -147,6 +173,23 @@ function titleKey(title) {
   tokens.sort();
   return tokens.join(" ");
 }
+
+const SLOT_LABELS = {
+  mon_lunch: "Lundi déjeuner",
+  mon_dinner: "Lundi dîner",
+  tue_lunch: "Mardi déjeuner",
+  tue_dinner: "Mardi dîner",
+  wed_lunch: "Mercredi déjeuner",
+  wed_dinner: "Mercredi dîner",
+  thu_lunch: "Jeudi déjeuner",
+  thu_dinner: "Jeudi dîner",
+  fri_lunch: "Vendredi déjeuner",
+  fri_dinner: "Vendredi dîner",
+  sat_lunch: "Samedi déjeuner",
+  sat_dinner: "Samedi dîner",
+  sun_lunch: "Dimanche déjeuner",
+  sun_dinner: "Dimanche dîner"
+};
 
 function parseProposalLines(lines, slots, existingTitles = null, existingKeys = null) {
   const slotSet = new Set(slots);
@@ -617,6 +660,13 @@ router.post("/proposals/generate", async (req, res) => {
         while (attempts < 3) {
           attempts += 1;
           const remainingSlots = filteredSlots.filter((s) => !parsedMap?.has(s));
+          const constraints = await readConstraints();
+          const globalConstraints = constraints.global || [];
+          const weekConstraints = constraints.weeks?.[weekId] || [];
+          const constraintLine =
+            globalConstraints.length || weekConstraints.length
+              ? `Contraintes utilisateur: ${[...globalConstraints, ...weekConstraints].join(" | ")}`
+              : "Contraintes utilisateur: aucune.";
           const assumptions =
             "Contexte: France (hémisphère Nord). Date de référence: 25 janvier 2026.";
           const resp = await openai.responses.create({
@@ -633,6 +683,7 @@ router.post("/proposals/generate", async (req, res) => {
               "7) Équivalences cru/cuit: pâtes x2,5 ; riz x3 ; semoule x2 ; légumineuses x3 ; pommes de terre x1 ; patate douce x1.",
               "8) Répétitions: ingrédient principal max 2 fois/semaine, si 2 fois -> 2 jours d’écart.",
               "9) Sources: mixer recettes générées + Drive si possible; demander rescan si index Drive non à jour.",
+              constraintLine,
               assumptions,
               "Donne un menu au format strict suivant (une ligne par slot):",
               ...remainingSlots.map((s) => `- ${s}: <titre>`),
@@ -944,5 +995,210 @@ router.get("", redirectToUsageAll);
 router.get("/", redirectToUsageAll);
 router.get("/tokens", redirectToUsageAll);
 router.get("/usage/tokens", redirectToUsageAll);
+
+// ------------------------------------------------------------------
+// Chat commands (Sprint G)
+// ------------------------------------------------------------------
+/**
+ * POST /api/chat/commands/parse
+ * body: { week_id, message }
+ * Returns a proposed action to validate.
+ */
+router.post("/commands/parse", async (req, res) => {
+  const weekId = String(req.body?.week_id || "");
+  const message = String(req.body?.message || "").trim();
+  if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!message) return res.status(400).json({ error: "missing_message" });
+
+  try {
+    const weekData = await readJson(path.join(DATA_DIR, "weeks", `${weekId}.json`)).catch(
+      () => null
+    );
+    const noLunchSlots = new Set(
+      weekData?.rules_readonly?.no_lunch_slots || ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"]
+    );
+    const slotLines = Object.entries(SLOT_LABELS)
+      .filter(([slot]) => !noLunchSlots.has(slot))
+      .map(([slot, label]) => `${slot} = ${label}`)
+      .join("\n");
+
+    const openai = getOpenAIClient();
+    if (!openai) return res.status(500).json({ error: "openai_not_configured" });
+
+    const model = getModel();
+    const prompt = [
+      "Tu reçois une demande utilisateur en langage courant.",
+      "Ta tâche: proposer UNE action structurée à valider.",
+      "Actions possibles:",
+      "- replace_proposal: remplace une proposition pour un slot (sans générer de fiche).",
+      "- add_constraint_week: ajoute une contrainte pour la semaine.",
+      "- add_constraint_global: ajoute une contrainte permanente.",
+      "- remove_constraint_week: supprime une contrainte semaine.",
+      "- remove_constraint_global: supprime une contrainte permanente.",
+      "Si la demande est ambiguë: renvoyer action_type=clarify et un message de clarification.",
+      "Slots disponibles:",
+      slotLines,
+      "Réponds STRICTEMENT en JSON avec ces clés:",
+      '{"action_type":"replace_proposal|add_constraint_week|add_constraint_global|remove_constraint_week|remove_constraint_global|clarify","slot":"mon_dinner","title":"...", "constraint":"...", "message":"..."}',
+      "Règles:",
+      "- slot requis seulement pour replace_proposal.",
+      "- title requis seulement pour replace_proposal.",
+      "- constraint requis pour add/remove constraint.",
+      "- message requis pour clarify.",
+      `Demande utilisateur: "${message}"`
+    ].join("\n");
+
+    const resp = await openai.responses.create({
+      model,
+      input: prompt
+    });
+    const raw = resp.output_text || "";
+    let action = null;
+    try {
+      action = JSON.parse(raw);
+    } catch (_e) {
+      return res.status(500).json({ error: "command_parse_failed", raw_text: raw });
+    }
+
+    const actionType = String(action?.action_type || "");
+    if (!actionType) {
+      return res.status(500).json({ error: "command_parse_invalid", raw_text: raw });
+    }
+
+    let summary = "";
+    if (actionType === "replace_proposal") {
+      const slot = action?.slot;
+      const title = action?.title;
+      summary = `Remplacer ${SLOT_LABELS[slot] || slot} par "${title}"`;
+    } else if (actionType === "add_constraint_week") {
+      summary = `Ajouter contrainte semaine: "${action?.constraint}"`;
+    } else if (actionType === "add_constraint_global") {
+      summary = `Ajouter contrainte permanente: "${action?.constraint}"`;
+    } else if (actionType === "remove_constraint_week") {
+      summary = `Supprimer contrainte semaine: "${action?.constraint}"`;
+    } else if (actionType === "remove_constraint_global") {
+      summary = `Supprimer contrainte permanente: "${action?.constraint}"`;
+    } else if (actionType === "clarify") {
+      summary = action?.message || "Peux-tu préciser ?";
+    }
+
+    return res.json({ ok: true, action, summary });
+  } catch (e) {
+    return res.status(500).json({ error: "command_parse_failed", details: e.message });
+  }
+});
+
+/**
+ * POST /api/chat/commands/apply
+ * body: { week_id, action }
+ */
+router.post("/commands/apply", async (req, res) => {
+  const weekId = String(req.body?.week_id || "");
+  const action = req.body?.action || null;
+  if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!action || typeof action !== "object") {
+    return res.status(400).json({ error: "missing_action" });
+  }
+
+  const type = String(action.action_type || "");
+  try {
+    if (type === "replace_proposal") {
+      const slot = String(action.slot || "");
+      const title = String(action.title || "").trim();
+      if (!slot || !title) {
+        return res.status(400).json({ error: "missing_slot_or_title" });
+      }
+
+      const weekData = await readJson(path.join(DATA_DIR, "weeks", `${weekId}.json`)).catch(
+        () => null
+      );
+      const noLunchSlots = new Set(
+        weekData?.rules_readonly?.no_lunch_slots || ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"]
+      );
+      if (noLunchSlots.has(slot)) {
+        return res.status(400).json({ error: "slot_not_allowed" });
+      }
+      if (weekData?.slots?.[slot]?.validated === true) {
+        return res.status(409).json({ error: "slot_already_validated" });
+      }
+
+      const { path: p, data } = await ensureChatFile(weekId);
+      if (!data.menu_proposals || typeof data.menu_proposals !== "object") {
+        data.menu_proposals = {};
+      }
+      data.menu_proposals[slot] = [
+        {
+          proposal_id: newProposalId(),
+          title,
+          recipe_id: null,
+          source: "CHAT_USER",
+          status: "PROPOSED",
+          to_save: false,
+          created_at: nowIso()
+        }
+      ];
+      data.updated_at = nowIso();
+      await safeWriteChat(p, data);
+
+      return res.json({
+        ok: true,
+        action_applied: type,
+        slot,
+        menu_proposals: { [slot]: data.menu_proposals[slot] }
+      });
+    }
+
+    const constraints = await readConstraints();
+    if (type === "add_constraint_week") {
+      const text = normalizeConstraint(action.constraint);
+      if (!text) return res.status(400).json({ error: "missing_constraint" });
+      const list = Array.isArray(constraints.weeks?.[weekId])
+        ? constraints.weeks[weekId]
+        : [];
+      if (!list.includes(text)) list.push(text);
+      constraints.weeks[weekId] = list;
+      await writeConstraints(constraints);
+      return res.json({ ok: true, action_applied: type, constraint: text });
+    }
+
+    if (type === "add_constraint_global") {
+      const text = normalizeConstraint(action.constraint);
+      if (!text) return res.status(400).json({ error: "missing_constraint" });
+      const list = Array.isArray(constraints.global) ? constraints.global : [];
+      if (!list.includes(text)) list.push(text);
+      constraints.global = list;
+      await writeConstraints(constraints);
+      return res.json({ ok: true, action_applied: type, constraint: text });
+    }
+
+    if (type === "remove_constraint_week") {
+      const text = normalizeConstraint(action.constraint);
+      if (!text) return res.status(400).json({ error: "missing_constraint" });
+      const list = Array.isArray(constraints.weeks?.[weekId])
+        ? constraints.weeks[weekId]
+        : [];
+      constraints.weeks[weekId] = list.filter((x) => x !== text);
+      await writeConstraints(constraints);
+      return res.json({ ok: true, action_applied: type, constraint: text });
+    }
+
+    if (type === "remove_constraint_global") {
+      const text = normalizeConstraint(action.constraint);
+      if (!text) return res.status(400).json({ error: "missing_constraint" });
+      const list = Array.isArray(constraints.global) ? constraints.global : [];
+      constraints.global = list.filter((x) => x !== text);
+      await writeConstraints(constraints);
+      return res.json({ ok: true, action_applied: type, constraint: text });
+    }
+
+    if (type === "clarify") {
+      return res.status(400).json({ error: "clarify_required", message: action.message || "" });
+    }
+
+    return res.status(400).json({ error: "unknown_action_type" });
+  } catch (e) {
+    return res.status(500).json({ error: "command_apply_failed", details: e.message });
+  }
+});
 
 export default router;
