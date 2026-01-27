@@ -411,7 +411,7 @@ export default function CockpitWeek() {
         role: "assistant",
         text: j.summary || "Proposition prête.",
         action: j.action || null,
-        status: "pending"
+        status: j.action ? "pending" : "info"
       };
       setChatMessages((prev) => [...prev, assistantMsg]);
     } catch (e) {
@@ -1290,7 +1290,7 @@ export default function CockpitWeek() {
                   borderBottom: "1px solid #eee"
                 }}
               >
-                <td style={{ width: 220, verticalAlign: "top", padding: "10px 8px" }}>
+                <td style={{ width: 150, verticalAlign: "top", padding: "10px 6px" }}>
                   <div style={{ fontWeight: 700 }}>
                     {getSlotLabel(slot)}
                   </div>
@@ -1331,7 +1331,7 @@ export default function CockpitWeek() {
                   </div>
                 </td>
 
-                <td style={{ verticalAlign: "top", padding: "10px 8px" }}>
+                <td style={{ verticalAlign: "top", padding: "10px 6px 10px 0" }}>
                   {isValidated ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ fontWeight: 700 }}>
@@ -1567,7 +1567,7 @@ export default function CockpitWeek() {
                     fontSize: 16
                   }}
                 >
-                  {m.text}
+                  <span style={{ whiteSpace: "pre-wrap" }}>{m.text}</span>
                 </div>
                 {m.action && m.status === "pending" ? (
                   <div style={{ marginTop: 6, display: "flex", gap: 6 }}>

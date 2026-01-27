@@ -80,6 +80,33 @@ function normalizeConstraint(text) {
   return String(text || "").trim().replace(/\s+/g, " ");
 }
 
+function formatRecipePreview(title, preview) {
+  const lines = [];
+  if (title) lines.push(title);
+  if (preview?.description_courte) {
+    lines.push("");
+    lines.push(preview.description_courte);
+  }
+  if (Array.isArray(preview?.ingredients) && preview.ingredients.length) {
+    lines.push("");
+    lines.push("Ingrédients:");
+    for (const ing of preview.ingredients) {
+      const qty = ing?.qty ? `${ing.qty} ` : "";
+      const unit = ing?.unit ? `${ing.unit} ` : "";
+      const item = ing?.item || "";
+      lines.push(`- ${qty}${unit}${item}`.trim());
+    }
+  }
+  if (Array.isArray(preview?.preparation_steps) && preview.preparation_steps.length) {
+    lines.push("");
+    lines.push("Étapes:");
+    preview.preparation_steps.forEach((step, idx) => {
+      lines.push(`${idx + 1}. ${step}`);
+    });
+  }
+  return lines.join("\n");
+}
+
 async function listLocalRecipes() {
   await ensureDir(RECIPES_DIR);
   const files = await fs.readdir(RECIPES_DIR);
@@ -1035,16 +1062,19 @@ router.post("/commands/parse", async (req, res) => {
       "- add_constraint_global: ajoute une contrainte permanente.",
       "- remove_constraint_week: supprime une contrainte semaine.",
       "- remove_constraint_global: supprime une contrainte permanente.",
-      "Si la demande est ambiguë: renvoyer action_type=clarify et un message de clarification.",
+      "- chat_recipe: fournir une recette en réponse (sans changer la semaine).",
+      "- chat_reply: répondre en texte libre (sans action).",
+      "Si la demande est ambiguë: utiliser chat_reply et demander précision.",
       "Slots disponibles:",
       slotLines,
       "Réponds STRICTEMENT en JSON avec ces clés:",
-      '{"action_type":"replace_proposal|add_constraint_week|add_constraint_global|remove_constraint_week|remove_constraint_global|clarify","slot":"mon_dinner","title":"...", "constraint":"...", "message":"..."}',
+      '{"action_type":"replace_proposal|add_constraint_week|add_constraint_global|remove_constraint_week|remove_constraint_global|chat_recipe|chat_reply","slot":"mon_dinner","title":"...", "constraint":"...", "message":"...", "recipe_title":"..."}',
       "Règles:",
       "- slot requis seulement pour replace_proposal.",
       "- title requis seulement pour replace_proposal.",
       "- constraint requis pour add/remove constraint.",
-      "- message requis pour clarify.",
+      "- message requis pour chat_reply.",
+      "- recipe_title requis pour chat_recipe.",
       `Demande utilisateur: "${message}"`
     ].join("\n");
 
@@ -1070,19 +1100,43 @@ router.post("/commands/parse", async (req, res) => {
       const slot = action?.slot;
       const title = action?.title;
       summary = `Remplacer ${SLOT_LABELS[slot] || slot} par "${title}"`;
-    } else if (actionType === "add_constraint_week") {
+      return res.json({ ok: true, action, summary });
+    }
+    if (actionType === "add_constraint_week") {
       summary = `Ajouter contrainte semaine: "${action?.constraint}"`;
-    } else if (actionType === "add_constraint_global") {
+      return res.json({ ok: true, action, summary });
+    }
+    if (actionType === "add_constraint_global") {
       summary = `Ajouter contrainte permanente: "${action?.constraint}"`;
-    } else if (actionType === "remove_constraint_week") {
+      return res.json({ ok: true, action, summary });
+    }
+    if (actionType === "remove_constraint_week") {
       summary = `Supprimer contrainte semaine: "${action?.constraint}"`;
-    } else if (actionType === "remove_constraint_global") {
+      return res.json({ ok: true, action, summary });
+    }
+    if (actionType === "remove_constraint_global") {
       summary = `Supprimer contrainte permanente: "${action?.constraint}"`;
-    } else if (actionType === "clarify") {
-      summary = action?.message || "Peux-tu préciser ?";
+      return res.json({ ok: true, action, summary });
+    }
+    if (actionType === "chat_recipe") {
+      const recipeTitle = String(action?.recipe_title || "").trim();
+      if (!recipeTitle) {
+        return res.json({
+          ok: true,
+          action: null,
+          summary: action?.message || "Quelle recette souhaites-tu ?"
+        });
+      }
+      const preview = await buildPreviewFromTitle(recipeTitle, null);
+      summary = formatRecipePreview(recipeTitle, preview);
+      return res.json({ ok: true, action: null, summary });
+    }
+    if (actionType === "chat_reply") {
+      summary = action?.message || "OK.";
+      return res.json({ ok: true, action: null, summary });
     }
 
-    return res.json({ ok: true, action, summary });
+    return res.status(500).json({ error: "command_parse_invalid", raw_text: raw });
   } catch (e) {
     return res.status(500).json({ error: "command_parse_failed", details: e.message });
   }
@@ -1189,10 +1243,6 @@ router.post("/commands/apply", async (req, res) => {
       constraints.global = list.filter((x) => x !== text);
       await writeConstraints(constraints);
       return res.json({ ok: true, action_applied: type, constraint: text });
-    }
-
-    if (type === "clarify") {
-      return res.status(400).json({ error: "clarify_required", message: action.message || "" });
     }
 
     return res.status(400).json({ error: "unknown_action_type" });
