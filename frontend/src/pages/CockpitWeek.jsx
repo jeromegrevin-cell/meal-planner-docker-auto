@@ -313,11 +313,6 @@ export default function CockpitWeek() {
   const slotsWithProposals = requiredProposalSlots.filter(
     (slot) => (menuProposals?.[slot] || []).length > 0
   );
-  const proposalsProgress = {
-    total: requiredProposalSlots.length,
-    done: slotsWithProposals.length
-  };
-  const proposalsComplete = proposalsProgress.done === proposalsProgress.total;
 
   // --------------------
   // Loaders
@@ -1095,11 +1090,8 @@ export default function CockpitWeek() {
         }}
       >
         <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span>1 · Choisir une semaine</span>
-            <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 999, background: selectedWeekId ? "#e8f5e9" : "#f2f2f2", color: selectedWeekId ? "#1b5e20" : "#666" }}>
-              {selectedWeekId ? "OK" : "à faire"}
-            </span>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+            1 · Choisir une semaine
           </div>
           <select
             style={{ width: "100%" }}
@@ -1118,11 +1110,8 @@ export default function CockpitWeek() {
         </section>
 
         <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span>2 · Créer une nouvelle semaine</span>
-            <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 999, background: prepWeekId ? "#f2f2f2" : "#f2f2f2", color: "#666" }}>
-              {prepWeekId ? "prêt" : "à faire"}
-            </span>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+            2 · Créer une nouvelle semaine
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <input
@@ -1160,11 +1149,8 @@ export default function CockpitWeek() {
         </section>
 
         <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span>3 · Proposer les menus</span>
-            <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 999, background: proposalsComplete ? "#e8f5e9" : "#f2f2f2", color: proposalsComplete ? "#1b5e20" : "#666" }}>
-              {proposalsComplete ? "OK" : `${proposalsProgress.done}/${proposalsProgress.total}`}
-            </span>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+            3 · Proposer les menus
           </div>
           <button
             onClick={() => generateProposals(week?.week_id)}
@@ -1178,11 +1164,8 @@ export default function CockpitWeek() {
         </section>
 
         <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span>4 · Upload</span>
-            <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 999, background: pendingUploadCount === 0 ? "#e8f5e9" : "#f2f2f2", color: pendingUploadCount === 0 ? "#1b5e20" : "#666" }}>
-              {pendingUploadCount === 0 ? "OK" : `${pendingUploadCount} à uploader`}
-            </span>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+            4 · Upload
           </div>
           <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
             Upload to Drive/Recettes
