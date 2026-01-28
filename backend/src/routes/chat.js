@@ -192,6 +192,15 @@ function normalizeKey(text) {
     .trim();
 }
 
+function normalizePlain(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function titleKey(title) {
   const base = normalizeKey(title);
   if (!base) return "";
@@ -217,6 +226,53 @@ const SLOT_LABELS = {
   sun_lunch: "Dimanche déjeuner",
   sun_dinner: "Dimanche dîner"
 };
+
+function detectCancelSlot(message) {
+  const msg = normalizePlain(message);
+  if (!msg) return null;
+
+  const cancelHints = [
+    "annule",
+    "annuler",
+    "supprime",
+    "supprimer",
+    "pas de repas",
+    "pas de menu",
+    "rien",
+    "vide"
+  ];
+  const hasCancel = cancelHints.some((h) => msg.includes(h));
+  if (!hasCancel) return null;
+
+  const dayMap = {
+    lundi: "mon",
+    mardi: "tue",
+    mercredi: "wed",
+    jeudi: "thu",
+    vendredi: "fri",
+    samedi: "sat",
+    dimanche: "sun"
+  };
+  const lunchHints = ["dejeuner", "dejeuner", "midi"];
+  const dinnerHints = ["diner", "diner", "soir"];
+
+  let day = null;
+  for (const [label, prefix] of Object.entries(dayMap)) {
+    if (msg.includes(label)) {
+      day = prefix;
+      break;
+    }
+  }
+  if (!day) return null;
+
+  const isLunch = lunchHints.some((h) => msg.includes(h));
+  const isDinner = dinnerHints.some((h) => msg.includes(h));
+  if (isLunch && !isDinner) return `${day}_lunch`;
+  if (isDinner && !isLunch) return `${day}_dinner`;
+
+  // ambiguous meal -> ask clarification
+  return null;
+}
 
 function parseProposalLines(lines, slots, existingTitles = null, existingKeys = null) {
   const slotSet = new Set(slots);
@@ -1049,6 +1105,15 @@ router.post("/commands/parse", async (req, res) => {
       .map(([slot, label]) => `${slot} = ${label}`)
       .join("\n");
 
+    const cancelSlot = detectCancelSlot(message);
+    if (cancelSlot) {
+      return res.json({
+        ok: true,
+        action: { action_type: "cancel_slot", slot: cancelSlot },
+        summary: `Annuler ${SLOT_LABELS[cancelSlot] || cancelSlot}`
+      });
+    }
+
     const openai = getOpenAIClient();
     if (!openai) return res.status(500).json({ error: "openai_not_configured" });
 
@@ -1058,6 +1123,7 @@ router.post("/commands/parse", async (req, res) => {
       "Ta tâche: proposer UNE action structurée à valider.",
       "Actions possibles:",
       "- replace_proposal: remplace une proposition pour un slot (sans générer de fiche).",
+      "- cancel_slot: annule un repas (vide le slot et supprime les propositions).",
       "- add_constraint_week: ajoute une contrainte pour la semaine.",
       "- add_constraint_global: ajoute une contrainte permanente.",
       "- remove_constraint_week: supprime une contrainte semaine.",
@@ -1065,12 +1131,15 @@ router.post("/commands/parse", async (req, res) => {
       "- chat_recipe: fournir une recette en réponse (sans changer la semaine).",
       "- chat_reply: répondre en texte libre (sans action).",
       "Si la demande est ambiguë: utiliser chat_reply et demander précision.",
+      "Exemples:",
+      'Utilisateur: "annule mercredi dîner" -> {"action_type":"cancel_slot","slot":"wed_dinner"}',
+      'Utilisateur: "pas de repas vendredi soir" -> {"action_type":"cancel_slot","slot":"fri_dinner"}',
       "Slots disponibles:",
       slotLines,
       "Réponds STRICTEMENT en JSON avec ces clés:",
-      '{"action_type":"replace_proposal|add_constraint_week|add_constraint_global|remove_constraint_week|remove_constraint_global|chat_recipe|chat_reply","slot":"mon_dinner","title":"...", "constraint":"...", "message":"...", "recipe_title":"..."}',
+      '{"action_type":"replace_proposal|cancel_slot|add_constraint_week|add_constraint_global|remove_constraint_week|remove_constraint_global|chat_recipe|chat_reply","slot":"mon_dinner","title":"...", "constraint":"...", "message":"...", "recipe_title":"..."}',
       "Règles:",
-      "- slot requis seulement pour replace_proposal.",
+      "- slot requis seulement pour replace_proposal et cancel_slot.",
       "- title requis seulement pour replace_proposal.",
       "- constraint requis pour add/remove constraint.",
       "- message requis pour chat_reply.",
@@ -1100,6 +1169,11 @@ router.post("/commands/parse", async (req, res) => {
       const slot = action?.slot;
       const title = action?.title;
       summary = `Remplacer ${SLOT_LABELS[slot] || slot} par "${title}"`;
+      return res.json({ ok: true, action, summary });
+    }
+    if (actionType === "cancel_slot") {
+      const slot = action?.slot;
+      summary = `Annuler ${SLOT_LABELS[slot] || slot}`;
       return res.json({ ok: true, action, summary });
     }
     if (actionType === "add_constraint_week") {
@@ -1199,6 +1273,46 @@ router.post("/commands/apply", async (req, res) => {
         action_applied: type,
         slot,
         menu_proposals: { [slot]: data.menu_proposals[slot] }
+      });
+    }
+
+    if (type === "cancel_slot") {
+      const slot = String(action.slot || "");
+      if (!slot) {
+        return res.status(400).json({ error: "missing_slot" });
+      }
+
+      const weekPath = path.join(DATA_DIR, "weeks", `${weekId}.json`);
+      const weekData = await readJson(weekPath).catch(() => null);
+      if (!weekData) return res.status(404).json({ error: "week_not_found" });
+      if (!weekData?.slots?.[slot]) {
+        return res.status(400).json({ error: "unknown_slot" });
+      }
+
+      weekData.slots[slot] = {
+        ...weekData.slots[slot],
+        recipe_id: null,
+        free_text: "",
+        validated: false,
+        source_type: null
+      };
+      weekData.updated_at = nowIso();
+      await writeJson(weekPath, weekData);
+
+      const { path: p, data } = await ensureChatFile(weekId);
+      if (!data.menu_proposals || typeof data.menu_proposals !== "object") {
+        data.menu_proposals = {};
+      }
+      data.menu_proposals[slot] = [];
+      data.updated_at = nowIso();
+      await safeWriteChat(p, data);
+
+      return res.json({
+        ok: true,
+        action_applied: type,
+        slot,
+        week: weekData,
+        menu_proposals: { [slot]: [] }
       });
     }
 

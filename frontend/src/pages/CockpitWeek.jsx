@@ -472,6 +472,9 @@ export default function CockpitWeek() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ week_id: week.week_id, action })
       });
+      if (j?.week) {
+        setWeek(j.week);
+      }
       if (j?.menu_proposals) {
         setMenuProposals((prev) => ({ ...prev, ...j.menu_proposals }));
       }
