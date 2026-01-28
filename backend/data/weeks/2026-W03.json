@@ -12,7 +12,23 @@
     ],
     "main_ingredient_max_per_week": 2,
     "main_ingredient_min_day_gap_if_used_twice": 2,
-    "seasonality_required": true
+    "seasonality_required": true,
+    "active_slots": [
+      "mon_lunch",
+      "mon_dinner",
+      "tue_lunch",
+      "tue_dinner",
+      "wed_lunch",
+      "wed_dinner",
+      "thu_lunch",
+      "thu_dinner",
+      "fri_lunch",
+      "fri_dinner",
+      "sat_lunch",
+      "sat_dinner",
+      "sun_lunch",
+      "sun_dinner"
+    ]
   },
   "slots": {
     "mon_dinner": {
@@ -46,5 +62,5 @@
       "recipe_id": "rcp_0001"
     }
   },
-  "updated_at": "2026-01-12T16:35:32.640Z"
+  "updated_at": "2026-01-28T11:39:33.871Z"
 }

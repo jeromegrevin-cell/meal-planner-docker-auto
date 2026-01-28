@@ -4,22 +4,63 @@
   "date_end": "2026-01-18",
   "timezone": "Europe/Paris",
   "rules_readonly": {
-    "no_lunch_slots": ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"],
+    "no_lunch_slots": [
+      "mon_lunch",
+      "tue_lunch",
+      "thu_lunch",
+      "fri_lunch"
+    ],
     "main_ingredient_max_per_week": 2,
     "main_ingredient_min_day_gap_if_used_twice": 2,
-    "seasonality_required": true
+    "seasonality_required": true,
+    "active_slots": [
+      "mon_lunch",
+      "mon_dinner",
+      "tue_lunch",
+      "tue_dinner",
+      "wed_lunch",
+      "wed_dinner",
+      "thu_lunch",
+      "thu_dinner",
+      "fri_lunch",
+      "fri_dinner",
+      "sat_lunch",
+      "sat_dinner",
+      "sun_lunch",
+      "sun_dinner"
+    ]
   },
   "slots": {
-    "mon_dinner": { "recipe_id": "rcp_0001" },
-    "tue_dinner": { "recipe_id": "rcp_0002" },
-    "wed_lunch": { "recipe_id": "rcp_0003" },
-    "wed_dinner": { "recipe_id": "rcp_0004" },
-    "thu_dinner": { "recipe_id": "rcp_0005" },
-    "fri_dinner": { "recipe_id": "rcp_0006" },
-    "sat_lunch": { "recipe_id": "rcp_0003" },
-    "sat_dinner": { "recipe_id": "rcp_0002" },
-    "sun_lunch": { "recipe_id": "rcp_0004" },
-    "sun_dinner": { "recipe_id": "rcp_0001" }
+    "mon_dinner": {
+      "recipe_id": "rcp_0001"
+    },
+    "tue_dinner": {
+      "recipe_id": "rcp_0002"
+    },
+    "wed_lunch": {
+      "recipe_id": "rcp_0003"
+    },
+    "wed_dinner": {
+      "recipe_id": "rcp_0004"
+    },
+    "thu_dinner": {
+      "recipe_id": "rcp_0005"
+    },
+    "fri_dinner": {
+      "recipe_id": "rcp_0006"
+    },
+    "sat_lunch": {
+      "recipe_id": "rcp_0003"
+    },
+    "sat_dinner": {
+      "recipe_id": "rcp_0002"
+    },
+    "sun_lunch": {
+      "recipe_id": "rcp_0004"
+    },
+    "sun_dinner": {
+      "recipe_id": "rcp_0001"
+    }
   },
-  "updated_at": "2026-01-12T12:01:00+01:00"
+  "updated_at": "2026-01-28T11:39:33.871Z"
 }
