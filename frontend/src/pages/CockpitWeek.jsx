@@ -324,6 +324,8 @@ export default function CockpitWeek() {
   const [shoppingError, setShoppingError] = useState(null);
   const [shoppingList, setShoppingList] = useState(null);
   const [pantryChecked, setPantryChecked] = useState({});
+  const [pantryOrder, setPantryOrder] = useState({});
+  const pantrySaveTimer = useRef(null);
   const [keepMode, setKeepMode] = useState("shopping");
   const [keepText, setKeepText] = useState("");
 
@@ -539,7 +541,10 @@ export default function CockpitWeek() {
         const key = `${it.item}__${it.unit || ""}`;
         next[key] = false;
       });
-      setPantryChecked(next);
+      const persisted = j?.week?.pantry_checked || {};
+      const merged = { ...next, ...persisted };
+      setPantryChecked(merged);
+      setPantryOrder({});
     } catch (e) {
       setShoppingError(e.message || String(e));
     } finally {
@@ -557,6 +562,26 @@ export default function CockpitWeek() {
     const listData = { ...shoppingList, items: filtered };
     setKeepText(buildKeepShoppingText(listData));
   }, [pantryChecked, keepMode, shoppingList, shoppingOpen]);
+
+  useEffect(() => {
+    if (!shoppingOpen || keepMode !== "shopping" || !week?.week_id) return;
+    clearTimeout(pantrySaveTimer.current);
+    pantrySaveTimer.current = setTimeout(async () => {
+      try {
+        await fetchJson(
+          `/api/weeks/${encodeURIComponent(week.week_id)}/pantry`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pantry_checked: pantryChecked })
+          }
+        );
+      } catch {
+        // silent fail; local state still works
+      }
+    }, 600);
+    return () => clearTimeout(pantrySaveTimer.current);
+  }, [pantryChecked, shoppingOpen, keepMode, week?.week_id]);
 
   function toAscii(text) {
     return String(text || "")
@@ -2316,6 +2341,11 @@ export default function CockpitWeek() {
                       if (pantryChecked[key]) checked.push(it);
                       else unchecked.push(it);
                     });
+                    unchecked.sort((a, b) => {
+                      const ka = `${a.item}__${a.unit || ""}`;
+                      const kb = `${b.item}__${b.unit || ""}`;
+                      return (pantryOrder[ka] || 0) - (pantryOrder[kb] || 0);
+                    });
                     return unchecked.concat(checked).map((it, idx) => {
                       const key = `${it.item}__${it.unit || ""}`;
                       const isChecked = !!pantryChecked[key];
@@ -2334,10 +2364,17 @@ export default function CockpitWeek() {
                             type="checkbox"
                             checked={isChecked}
                             onChange={(e) =>
-                              setPantryChecked((prev) => ({
-                                ...prev,
-                                [key]: e.target.checked
-                              }))
+                              {
+                                const nextChecked = e.target.checked;
+                                setPantryChecked((prev) => ({
+                                  ...prev,
+                                  [key]: nextChecked
+                                }));
+                                setPantryOrder((prev) => ({
+                                  ...prev,
+                                  [key]: Date.now()
+                                }));
+                              }
                             }
                           />
                           <span style={{ textDecoration: isChecked ? "line-through" : "none" }}>

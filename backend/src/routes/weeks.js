@@ -940,4 +940,36 @@ router.get("/:week_id", async (req, res) => {
   }
 });
 
+/**
+ * PATCH /api/weeks/:week_id/pantry
+ * body: { pantry_checked: { [key]: boolean } }
+ * Persists pantry checklist per week.
+ */
+router.patch("/:week_id/pantry", async (req, res) => {
+  try {
+    const weekId = String(req.params.week_id || "").trim();
+    if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+    if (!isValidWeekId(weekId)) {
+      return res.status(400).json({ error: "invalid_week_id" });
+    }
+
+    const pantry = req.body?.pantry_checked;
+    if (!pantry || typeof pantry !== "object") {
+      return res.status(400).json({ error: "missing_pantry_checked" });
+    }
+
+    const p = path.join(WEEKS_DIR, `${weekId}.json`);
+    const week = await safeReadJson(p);
+    if (!week) return res.status(404).json({ error: "week_not_found" });
+
+    week.pantry_checked = pantry;
+    week.updated_at = nowIso();
+    await writeJson(p, week);
+
+    return res.json({ ok: true, week_id: weekId, pantry_checked: pantry });
+  } catch (e) {
+    return res.status(500).json({ error: "week_pantry_failed", details: e.message });
+  }
+});
+
 export default router;
