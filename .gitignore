@@ -56,3 +56,5 @@ backend/data/constraints.json
 # --------------------
 *.save
 backend/pdfs/
+
+_archive_*/
