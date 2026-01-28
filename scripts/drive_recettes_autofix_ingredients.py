@@ -47,7 +47,8 @@ def get_drive_client():
             if not oauth_client:
                 raise SystemExit("Missing OAuth client (drive_oauth_client.json).")
             flow = InstalledAppFlow.from_client_secrets_file(oauth_client, scopes=scopes)
-            creds = flow.run_local_server(port=0, prompt="consent")
+            oauth_port = int(os.environ.get("DRIVE_OAUTH_PORT", "3002"))
+            creds = flow.run_local_server(port=oauth_port, prompt="consent")
         Path(token_path).write_text(creds.to_json(), encoding="utf-8")
     return build("drive", "v3", credentials=creds)
 
@@ -135,6 +136,50 @@ def extract_ingredients(text: str):
     return out
 
 
+def extract_ingredients_fallback(text: str):
+    lines = [l.strip() for l in text.splitlines()]
+    # find first steps header to bound ingredients block
+    step_idx = None
+    for i, line in enumerate(lines):
+        low = line.lower().strip()
+        if low.startswith("etape") or low.startswith("préparation") or low.startswith("preparation"):
+            step_idx = i
+            break
+        if low.startswith("steps") or low.startswith("method"):
+            step_idx = i
+            break
+    if step_idx is None:
+        return []
+    candidates = [l for l in lines[:step_idx] if l.strip()]
+    if not candidates:
+        return []
+    # drop likely title line
+    first = candidates[0]
+    if (
+        not re.search(r"\d", first)
+        and not first.startswith(("-", "•"))
+        and len(first) > 18
+    ):
+        candidates = candidates[1:]
+    unit_rx = re.compile(
+        r"(kg|g|gr|mg|ml|cl|l|c\. ?a|c\. ?à|cuill|tbsp|tsp|cup|pinc[ée]e|sachet|tranche|gousse|piece|pi[eè]ce)",
+        re.IGNORECASE,
+    )
+    ingredients = []
+    for l in candidates:
+        if l.startswith(("-", "•")) or re.match(r"^\d", l) or unit_rx.search(l):
+            ingredients.append(l.lstrip("-•").strip())
+    # de-dupe
+    seen = set()
+    out = []
+    for i in ingredients:
+        key = re.sub(r"\s+", " ", i.lower()).strip()
+        if key and key not in seen:
+            out.append(i)
+            seen.add(key)
+    return out
+
+
 def insert_ingredients_section(docs_service, doc_id: str, ingredients):
     if not ingredients:
         return False
@@ -165,6 +210,7 @@ def main():
     folder_id = find_folder_id(drive, args.folder)
     if not folder_id:
         raise SystemExit(f"Folder not found: {args.folder}")
+    recettes_folder_id = find_folder_id(drive, "Recettes")
 
     docs = list_docs_in_folder(drive, folder_id)
     fixed = 0
@@ -176,11 +222,21 @@ def main():
         text = get_doc_text(docs_service, d["id"])
         ingredients = extract_ingredients(text)
         if not ingredients:
+            ingredients = extract_ingredients_fallback(text)
+        if not ingredients:
             skipped += 1
             continue
         ok = insert_ingredients_section(docs_service, d["id"], ingredients)
         if ok:
             fixed += 1
+            if recettes_folder_id:
+                # move out of TO_FIX folder back to Recettes
+                drive.files().update(
+                    fileId=d["id"],
+                    addParents=recettes_folder_id,
+                    removeParents=folder_id,
+                    fields="id,parents",
+                ).execute()
     print({"fixed": fixed, "skipped": skipped, "total": len(docs)})
 
 

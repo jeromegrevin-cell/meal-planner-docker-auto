@@ -47,7 +47,8 @@ def get_drive_client():
             if not oauth_client:
                 raise SystemExit("Missing OAuth client (drive_oauth_client.json).")
             flow = InstalledAppFlow.from_client_secrets_file(oauth_client, scopes=scopes)
-            creds = flow.run_local_server(port=0, prompt="consent")
+            oauth_port = int(os.environ.get("DRIVE_OAUTH_PORT", "3002"))
+            creds = flow.run_local_server(port=oauth_port, prompt="consent")
         Path(token_path).write_text(creds.to_json(), encoding="utf-8")
     return build("drive", "v3", credentials=creds)
 
