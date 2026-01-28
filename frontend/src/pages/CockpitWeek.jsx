@@ -1636,7 +1636,7 @@ export default function CockpitWeek() {
                 <td style={{ verticalAlign: "top", padding: "10px 6px 10px 0" }}>
                   {isValidated ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ fontWeight: 700 }}>
+                      <div style={{ fontWeight: 400 }}>
                         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
                           {validatedIsDrive ? <DriveIcon size={14} /> : null}
                           {validatedLabel(s)}
