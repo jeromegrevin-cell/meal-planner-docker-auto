@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import fs from "fs/promises";
+import fsSync from "fs";
+import OpenAI from "openai";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 import { DATA_DIR } from "../lib/dataPaths.js";
 
@@ -12,6 +14,29 @@ const CHAT_DIR = path.join(DATA_DIR, "chat_sessions");
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function readOpenAIKeyFromSecretsDir() {
+  const secretsDir = (process.env.MEAL_PLANNER_SECRETS_DIR || "").trim();
+  if (!secretsDir) return "";
+  const keyPath = path.join(secretsDir, "openai_api_key.txt");
+  if (!fsSync.existsSync(keyPath)) return "";
+  try {
+    const raw = fsSync.readFileSync(keyPath, "utf8");
+    return String(raw || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function getOpenAIClient() {
+  const key = (process.env.OPENAI_API_KEY || "").trim() || readOpenAIKeyFromSecretsDir();
+  if (!key) return null;
+  return new OpenAI({ apiKey: key });
+}
+
+function getModel() {
+  return process.env.OPENAI_MODEL || "gpt-5.2";
 }
 
 async function ensureDir(dirPath) {
@@ -87,6 +112,52 @@ function parseQty(raw) {
   if (!/^\d+(\.\d+)?$/.test(s)) return null;
   const v = Number(s);
   return Number.isFinite(v) ? v : null;
+}
+
+function peopleSignature(people) {
+  const adults = Number.isFinite(people?.adults) ? people.adults : 0;
+  const children = Number.isFinite(people?.children) ? people.children : 0;
+  const months = Array.isArray(people?.child_birth_months)
+    ? people.child_birth_months.join(",")
+    : "";
+  return `${adults}|${children}|${months}`;
+}
+
+async function buildPreviewFromTitle(title, people) {
+  const openai = getOpenAIClient();
+  if (!openai) {
+    const err = new Error("openai_not_configured");
+    err.code = "openai_not_configured";
+    throw err;
+  }
+
+  const model = getModel();
+  const peopleLine = people
+    ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
+    : "";
+
+  const prompt = [
+    `Génère une fiche courte de recette pour : "${title}".`,
+    peopleLine,
+    "Réponds STRICTEMENT en JSON avec ces clés:",
+    '{"description_courte":"...", "ingredients":[{"item":"...","qty":"...","unit":"..."}], "preparation_steps":["...","..."]}',
+    "IMPORTANT: preparation_steps doit contenir au moins 3 étapes."
+  ].join("\n");
+
+  const resp = await openai.responses.create({
+    model,
+    input: prompt
+  });
+
+  const raw = resp.output_text || "";
+  try {
+    return JSON.parse(raw);
+  } catch (_e) {
+    const err = new Error("preview_parse_failed");
+    err.code = "preview_parse_failed";
+    err.raw_text = raw;
+    throw err;
+  }
 }
 
 function slotPrefixFromDate(dateObj) {
@@ -556,6 +627,31 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
     if (validatedRaw === false) {
       delete week.slots[slot].preview;
       delete week.slots[slot].preview_people_signature;
+      delete week.slots[slot].generated_recipe;
+      delete week.slots[slot].generated_recipe_people_signature;
+    }
+    if (!week.slots[slot].free_text && !week.slots[slot].recipe_id) {
+      delete week.slots[slot].generated_recipe;
+      delete week.slots[slot].generated_recipe_people_signature;
+    }
+
+    // Auto-generate ingredients/steps for free-text validated slots (Sprint L)
+    try {
+      const slotData = week.slots[slot];
+      const hasFreeText = !!slotData?.free_text;
+      const hasRecipeId = !!slotData?.recipe_id;
+      const isValidated = slotData?.validated === true;
+      const sig = peopleSignature(slotData?.people);
+      const sigChanged = slotData?.generated_recipe_people_signature !== sig;
+      if (isValidated && hasFreeText && !hasRecipeId) {
+        if (!slotData.generated_recipe || sigChanged) {
+          const preview = await buildPreviewFromTitle(slotData.free_text, slotData.people);
+          slotData.generated_recipe = preview;
+          slotData.generated_recipe_people_signature = sig;
+        }
+      }
+    } catch {
+      // Best effort: validation should still succeed even if AI preview fails.
     }
 
     week.updated_at = nowIso();
@@ -700,12 +796,50 @@ router.get("/:week_id/shopping-list", async (req, res) => {
     const itemsMap = new Map();
     const missingRecipes = [];
     const usedRecipes = new Set();
+    let weekChanged = false;
 
     for (const [slot, s] of Object.entries(slots)) {
       if (s?.validated !== true) continue;
       const recipeId = s?.recipe_id || null;
       if (!recipeId) {
-        if (s?.free_text) {
+        let generated = s?.generated_recipe || null;
+        const generatedIngredients = Array.isArray(generated?.ingredients)
+          ? generated.ingredients
+          : [];
+        if (s?.free_text && generatedIngredients.length === 0) {
+          try {
+            const preview = await buildPreviewFromTitle(s.free_text, s?.people);
+            generated = preview;
+            s.generated_recipe = preview;
+            s.generated_recipe_people_signature = peopleSignature(s?.people);
+            weekChanged = true;
+          } catch {
+            // ignore and fall back to missing list
+          }
+        }
+        const finalIngredients = Array.isArray(generated?.ingredients)
+          ? generated.ingredients
+          : [];
+        if (finalIngredients.length > 0) {
+          for (const ing of finalIngredients) {
+            const item = String(ing?.item || "").trim();
+            if (!item) continue;
+            const unit = String(ing?.unit || "").trim();
+            const qtyRaw = String(ing?.qty || "").trim();
+            const key = `${normalizeIngredientKey(item)}|${normalizeIngredientKey(unit)}`;
+            if (!itemsMap.has(key)) {
+              itemsMap.set(key, {
+                item,
+                unit,
+                qtys: [],
+                recipes: new Set()
+              });
+            }
+            const entry = itemsMap.get(key);
+            if (qtyRaw) entry.qtys.push(qtyRaw);
+            entry.recipes.add(s?.free_text || slot);
+          }
+        } else if (s?.free_text) {
           missingRecipes.push({ slot, title: s.free_text });
         }
         continue;
@@ -761,6 +895,11 @@ router.get("/:week_id/shopping-list", async (req, res) => {
     }
 
     items.sort((a, b) => a.item.localeCompare(b.item));
+
+    if (weekChanged) {
+      week.updated_at = nowIso();
+      await writeJson(path.join(WEEKS_DIR, `${week.week_id}.json`), week);
+    }
 
     res.json({
       ok: true,

@@ -530,10 +530,12 @@ export default function CockpitWeek() {
       } else if (mode === "recipes") {
         setKeepText(buildKeepRecipesText(j));
       } else {
-        setKeepText(buildKeepShoppingText(j));
+        const consolidated = consolidateShoppingItems(j.items || []);
+        setKeepText(buildKeepShoppingText({ ...j, items: consolidated }));
       }
       const next = {};
-      (j.items || []).forEach((it) => {
+      const consolidated = consolidateShoppingItems(j.items || []);
+      consolidated.forEach((it) => {
         const key = `${it.item}__${it.unit || ""}`;
         next[key] = false;
       });
@@ -544,6 +546,17 @@ export default function CockpitWeek() {
       setShoppingLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!shoppingOpen || keepMode !== "shopping" || !shoppingList) return;
+    const consolidated = consolidateShoppingItems(shoppingList.items || []);
+    const filtered = consolidated.filter((it) => {
+      const key = `${it.item}__${it.unit || ""}`;
+      return !pantryChecked[key];
+    });
+    const listData = { ...shoppingList, items: filtered };
+    setKeepText(buildKeepShoppingText(listData));
+  }, [pantryChecked, keepMode, shoppingList, shoppingOpen]);
 
   function toAscii(text) {
     return String(text || "")
@@ -630,6 +643,188 @@ export default function CockpitWeek() {
       lines.push("");
     });
     return toAscii(lines.join("\n")).trim();
+  }
+
+  function consolidateShoppingItems(items = []) {
+    const map = new Map();
+    const normalizeUnitKey = (unitRaw) => {
+      const u = toAscii(unitRaw || "")
+        .toLowerCase()
+        .replace(/\(s\)/g, "s")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+      if (!u) return "";
+      const compact = u.replace(/\s+/g, " ");
+      if (["c a cafe", "c a c", "cafe", "cc"].includes(compact)) return "cafe";
+      if (["c a soupe", "c a s", "soupe", "cs"].includes(compact)) return "soupe";
+      if (["piece", "pieces", "pc", "pcs"].includes(compact)) return "piece";
+      if (["gousse", "gousses"].includes(compact)) return "gousse";
+      if (["pincee", "pincees"].includes(compact)) return "pincee";
+      if (["gramme", "grammes", "gr", "g"].includes(compact)) return "g";
+      if (["kilogramme", "kilogrammes", "kg"].includes(compact)) return "kg";
+      if (["millilitre", "millilitres", "ml"].includes(compact)) return "ml";
+      if (["centilitre", "centilitres", "cl"].includes(compact)) return "cl";
+      if (["litre", "litres", "l"].includes(compact)) return "l";
+      return compact;
+    };
+    const extractQtyUnit = (itemRaw, unitRaw, qtyRaw) => {
+      const raw = String(itemRaw || "");
+      if (unitRaw || qtyRaw) return { item: raw, unit: unitRaw, qty: qtyRaw };
+      const rawAscii = toAscii(raw);
+      const m = rawAscii.match(
+        /^\s*(\d+(?:[.,]\d+)?)\s*(c\.?\s*a\.?\s*c\.?|c\.?\s*a\.?\s*s\.?|c\.?\s*a\.?\s*caf[eé]?|c\.?\s*a\.?\s*soupe|cc|cs|gousses?|gousse\(s\)?|pinc[eé]e\(s\)?|pinc[eé]es?|pi[eè]ce\(s\)?|pieces?|pc|pcs|g|gr|kg|ml|cl|l)\s+(.*)$/i
+      );
+      if (!m) return { item: itemRaw, unit: unitRaw, qty: qtyRaw };
+      return {
+        qty: m[1],
+        unit: m[2],
+        item: m[3]
+      };
+    };
+    const normalizeItemKey = (itemRaw) =>
+      toAscii(itemRaw || "")
+        .toLowerCase()
+        .replace(/\(.*?\)/g, " ")
+        .replace(/\b(optionnel|facultatif|au gout|gout)\b/g, " ")
+        .replace(/\b(rouge|vert|jaune|speciale|speciales|type|egoutte|egouttes|rince|rincees|cuit|cuite|cuits|cuites|surgele|surgeles)\b/g, " ")
+        .replace(/\ben poudre\b/g, " ")
+        .replace(/^\s*\d+(?:[.,]\d+)?\s*(gousse\(s\)?|gousses?|pi[eè]ce\(s\)?|pieces?|pc|pcs|pinc[eé]e\(s\)?|pinc[eé]es?|c\.?\s*a\.?\s*c\.?|c\.?\s*a\.?\s*s\.?|cafe|soupe)?\s+/i, "")
+        .replace(/[,.;:]+/g, " ")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+    const canonicalItem = (itemRaw) => {
+      let base = normalizeItemKey(itemRaw);
+      if (!base) return { key: "", label: itemRaw };
+      const withoutPlural = base.replace(/\b(\w+)s\b/g, "$1");
+      base = withoutPlural;
+      // normalize common pairs
+      if (base.includes("piment") && base.includes("poudre")) {
+        base = base.replace(/\bpoudre\b/g, "").trim();
+      }
+      if (base.includes("poivron")) {
+        base = base.replace(/\brouge\b|\bvert\b|\bjaune\b/g, "").trim();
+      }
+      if (base.startsWith("pommes ") && base.includes("de terre")) {
+        base = "pommes de terre";
+      }
+      const synonyms = {
+        "cumin": "cumin moulu",
+        "cumin moulu": "cumin moulu",
+        "poivre": "poivre",
+        "sel": "sel",
+        "ail": "ail",
+        "oignon": "oignon",
+        "poireau": "poireau",
+        "poivron": "poivron"
+      };
+      const key = synonyms[base] || base;
+      const label = synonyms[base] || itemRaw;
+      return { key, label };
+    };
+    const spiceSet = new Set([
+      "sel",
+      "poivre",
+      "cumin moulu",
+      "cumin",
+      "piment",
+      "paprika",
+      "thym",
+      "herbes de provence"
+    ]);
+    const produceUnitFallback = {
+      ail: "gousse",
+      oignon: "piece",
+      poireau: "piece",
+      poivron: "piece"
+    };
+    items.forEach((it) => {
+      let itemRaw = String(it?.item || "").trim();
+      if (!itemRaw) return;
+      let unitRaw = String(it?.unit || "").trim();
+      let qtyRaw = String(it?.qty || "").trim();
+      const extracted = extractQtyUnit(itemRaw, unitRaw, qtyRaw);
+      itemRaw = String(extracted.item || "").trim() || itemRaw;
+      unitRaw = String(extracted.unit || "").trim() || unitRaw;
+      qtyRaw = String(extracted.qty || "").trim() || qtyRaw;
+      const canon = canonicalItem(itemRaw);
+      const isSpice = spiceSet.has(canon.key);
+      let unitKey = isSpice ? "spice" : normalizeUnitKey(unitRaw);
+      if (!unitKey && produceUnitFallback[canon.key]) {
+        unitKey = produceUnitFallback[canon.key];
+      }
+      const key = `${canon.key}__${unitKey}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          item: canon.label || itemRaw,
+          unit: spiceSet.has(canon.key)
+            ? ""
+            : unitRaw || (produceUnitFallback[canon.key] || ""),
+          qtys: [],
+          recipes: new Set(),
+          spiceTsp: 0
+        });
+      }
+      const entry = map.get(key);
+      if ((canon.label || itemRaw).length > String(entry.item || "").length) {
+        entry.item = canon.label || itemRaw;
+      }
+      if (qtyRaw) {
+        if (isSpice) {
+          const unitNorm = normalizeUnitKey(unitRaw);
+          const qtyNorm = qtyRaw.replace(",", ".");
+          const num = /^\d+(\.\d+)?$/.test(qtyNorm) ? Number(qtyNorm) : null;
+          if (num != null) {
+            const tsp =
+              unitNorm === "cafe"
+                ? num
+                : unitNorm === "soupe"
+                  ? num * 3
+                  : unitNorm === "pincee"
+                    ? num * 0.125
+                    : null;
+            if (tsp != null) {
+              entry.spiceTsp += tsp;
+            } else {
+              entry.qtys.push(`${qtyRaw}${unitRaw ? ` ${unitRaw}` : ""}`.trim());
+            }
+          } else {
+            entry.qtys.push(`${qtyRaw}${unitRaw ? ` ${unitRaw}` : ""}`.trim());
+          }
+        } else {
+          entry.qtys.push(qtyRaw);
+        }
+      }
+      (it?.recipes || []).forEach((r) => entry.recipes.add(r));
+    });
+    const out = [];
+    map.forEach((entry) => {
+      let qty = "";
+      if (entry.spiceTsp && entry.spiceTsp > 0) {
+        const tsp = Math.round(entry.spiceTsp * 10) / 10;
+        qty = `${tsp} c. a cafe`;
+        if (entry.qtys.length > 0) {
+          qty += ` + ${Array.from(new Set(entry.qtys)).join(" + ")}`;
+        }
+      } else {
+        const qtyNums = entry.qtys
+          .map((q) => q.replace(",", "."))
+          .map((q) => (/^\d+(\.\d+)?$/.test(q) ? Number(q) : null))
+          .filter((v) => v != null);
+        if (qtyNums.length === entry.qtys.length && qtyNums.length > 0) {
+          qty = String(qtyNums.reduce((a, b) => a + b, 0));
+        } else if (entry.qtys.length > 0) {
+          qty = Array.from(new Set(entry.qtys)).join(" + ");
+        }
+      }
+      out.push({
+        item: entry.item,
+        unit: entry.unit,
+        qty,
+        recipes: Array.from(entry.recipes)
+      });
+    });
+    out.sort((a, b) => a.item.localeCompare(b.item));
+    return out;
   }
 
   function buildKeepRecipesText(listData) {
@@ -1593,7 +1788,9 @@ export default function CockpitWeek() {
                     {getSlotLabel(slot)}
                   </div>
 
-                  {!isValidated && !FREE_TEXT_ALLOWED_SLOTS.has(slot) && (
+                  {!isValidated &&
+                    !FREE_TEXT_ALLOWED_SLOTS.has(slot) &&
+                    (hasRecipe || (s?.free_text && s.free_text.trim()) || proposals.length > 0) && (
                     <>
                       <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
                         {totalPeople} pers.
@@ -1912,7 +2109,7 @@ export default function CockpitWeek() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: "min(760px, 96vw)",
+              width: "min(1100px, 96vw)",
               background: "#fff",
               borderRadius: 10,
               padding: 16,
@@ -2031,11 +2228,14 @@ export default function CockpitWeek() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: "min(760px, 96vw)",
+              width: "min(1100px, 96vw)",
+              height: "80vh",
               background: "#fff",
               borderRadius: 10,
               padding: 16,
-              border: "1px solid #ddd"
+              border: "1px solid #ddd",
+              display: "flex",
+              flexDirection: "column"
             }}
           >
             <div style={{ display: "flex", alignItems: "center" }}>
@@ -2083,7 +2283,7 @@ export default function CockpitWeek() {
             )}
 
             {!shoppingLoading && !shoppingError && (
-              <div style={{ marginTop: 10 }}>
+              <div style={{ marginTop: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                 <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
                   Coche ce que tu as deja au placard. Le reste = a acheter.
                 </div>
@@ -2097,43 +2297,58 @@ export default function CockpitWeek() {
                   <textarea
                     readOnly
                     value={keepText}
-                    rows={10}
-                    style={{ width: "100%", fontFamily: "monospace", fontSize: 12 }}
+                    style={{
+                      width: "100%",
+                      fontFamily: "monospace",
+                      fontSize: 12,
+                      height: "60%",
+                      flexShrink: 0
+                    }}
                   />
                 ) : null}
-                <div style={{ maxHeight: 360, overflowY: "auto" }}>
-                  {(shoppingList?.items || []).map((it, idx) => {
-                    const key = `${it.item}__${it.unit || ""}`;
-                    const checked = !!pantryChecked[key];
-                    return (
-                      <label
-                        key={`${key}-${idx}`}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "4px 0",
-                          opacity: checked ? 0.5 : 1
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) =>
-                            setPantryChecked((prev) => ({
-                              ...prev,
-                              [key]: e.target.checked
-                            }))
-                          }
-                        />
-                        <span style={{ textDecoration: checked ? "line-through" : "none" }}>
-                          {it.qty ? `${it.qty} ` : ""}
-                          {it.unit ? `${it.unit} ` : ""}
-                          {it.item}
-                        </span>
-                      </label>
-                    );
-                  })}
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                  {(() => {
+                    const consolidated = consolidateShoppingItems(shoppingList?.items || []);
+                    const unchecked = [];
+                    const checked = [];
+                    consolidated.forEach((it) => {
+                      const key = `${it.item}__${it.unit || ""}`;
+                      if (pantryChecked[key]) checked.push(it);
+                      else unchecked.push(it);
+                    });
+                    return unchecked.concat(checked).map((it, idx) => {
+                      const key = `${it.item}__${it.unit || ""}`;
+                      const isChecked = !!pantryChecked[key];
+                      return (
+                        <label
+                          key={`${key}-${idx}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "4px 0",
+                            opacity: isChecked ? 0.5 : 1
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) =>
+                              setPantryChecked((prev) => ({
+                                ...prev,
+                                [key]: e.target.checked
+                              }))
+                            }
+                          />
+                          <span style={{ textDecoration: isChecked ? "line-through" : "none" }}>
+                            {it.qty ? `${it.qty} ` : ""}
+                            {it.unit ? `${it.unit} ` : ""}
+                            {it.item}
+                          </span>
+                        </label>
+                      );
+                    });
+                  })()}
                 </div>
                 {(shoppingList?.missing_recipes || []).length > 0 && (
                   <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
