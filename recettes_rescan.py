@@ -170,15 +170,39 @@ def build_drive_service():
 def get_or_save_folder_id(service, folder_name: str = "Recettes") -> str:
     # 1) ENV
     if ENV_FOLDER_ID:
-        print(f"📂 Using RECETTES_FOLDER_ID from environment: {ENV_FOLDER_ID}")
-        return ENV_FOLDER_ID
+        try:
+            meta = with_retries(
+                service.files().get,
+                fileId=ENV_FOLDER_ID,
+                fields="id,name,mimeType",
+                supportsAllDrives=True,
+            ).execute()
+            if meta.get("mimeType") == "application/vnd.google-apps.folder" and meta.get("name") == folder_name:
+                print(f"📂 Using RECETTES_FOLDER_ID from environment: {ENV_FOLDER_ID}")
+                return ENV_FOLDER_ID
+            print(
+                f"⚠️ RECETTES_FOLDER_ID points to '{meta.get('name')}', not '{folder_name}'. Ignoring env override."
+            )
+        except Exception:
+            print("⚠️ RECETTES_FOLDER_ID lookup failed. Falling back to search.")
 
     # 2) cached file
     if ID_FILE.exists():
         fid = ID_FILE.read_text(encoding="utf-8").strip()
         if fid:
-            print(f"📂 Using cached folder ID from {ID_FILE}: {fid}")
-            return fid
+            try:
+                meta = with_retries(
+                    service.files().get,
+                    fileId=fid,
+                    fields="id,name,mimeType",
+                    supportsAllDrives=True,
+                ).execute()
+                if meta.get("mimeType") == "application/vnd.google-apps.folder" and meta.get("name") == folder_name:
+                    print(f"📂 Using cached folder ID from {ID_FILE}: {fid}")
+                    return fid
+                print(f"⚠️ Cached folder ID points to '{meta.get('name')}', not '{folder_name}'. Re-searching.")
+            except Exception:
+                print("⚠️ Cached folder ID lookup failed. Re-searching.")
 
     # 3) lookup by name
     print(f"🔍 Searching Drive for folder named '{folder_name}'...")
