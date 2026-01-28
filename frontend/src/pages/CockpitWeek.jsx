@@ -1830,6 +1830,25 @@ export default function CockpitWeek() {
         }}
       >
         <div style={{ fontWeight: 700 }}>Chat</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            type="text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            placeholder="Écrire une demande..."
+            style={{ flex: 1, fontSize: 12 }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") sendChatMessage();
+            }}
+          />
+          <button
+            onClick={sendChatMessage}
+            disabled={chatLoading || !chatInput.trim()}
+            style={{ fontSize: 12 }}
+          >
+            Envoyer
+          </button>
+        </div>
         <div
           style={{
             flex: 1,
@@ -1845,7 +1864,7 @@ export default function CockpitWeek() {
               Dis-moi ce que tu veux changer (ex: “Pour mercredi dîner, je veux raclette”).
             </div>
           ) : (
-            chatMessages.map((m) => (
+            [...chatMessages].reverse().map((m) => (
               <div
                 key={m.id}
                 style={{
@@ -1874,25 +1893,6 @@ export default function CockpitWeek() {
               </div>
             ))
           )}
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <input
-            type="text"
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            placeholder="Écrire une demande..."
-            style={{ flex: 1, fontSize: 12 }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") sendChatMessage();
-            }}
-          />
-          <button
-            onClick={sendChatMessage}
-            disabled={chatLoading || !chatInput.trim()}
-            style={{ fontSize: 12 }}
-          >
-            Envoyer
-          </button>
         </div>
       </aside>
 
