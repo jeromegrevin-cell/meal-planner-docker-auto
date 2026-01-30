@@ -609,22 +609,11 @@ export default function CockpitWeek() {
     if (!listData?.week?.date_start || !listData?.week?.date_end) return "";
     const title = `MENU LIST (${listData.week.week_id})`;
     const lines = [title, ""];
-    const slotsOrder = [
-      "mon_lunch",
-      "mon_dinner",
-      "tue_lunch",
-      "tue_dinner",
-      "wed_lunch",
-      "wed_dinner",
-      "thu_lunch",
-      "thu_dinner",
-      "fri_lunch",
-      "fri_dinner",
-      "sat_lunch",
-      "sat_dinner",
-      "sun_lunch",
-      "sun_dinner"
-    ];
+    const slotPrefixFromDate = (dateObj) => {
+      const day = dateObj.getUTCDay();
+      const map = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+      return map[day];
+    };
     const labelMap = {
       mon_lunch: "Monday Lunch",
       mon_dinner: "Monday Dinner",
@@ -642,11 +631,17 @@ export default function CockpitWeek() {
       sun_dinner: "Sunday Dinner"
     };
     const slots = listData.week.slots || {};
-    for (const slot of slotsOrder) {
-      const s = slots[slot] || {};
-      const titleRaw = s.free_text || s.recipe_id || "";
-      const title = titleRaw ? titleRaw : "XXXX";
-      lines.push(`${labelMap[slot]}: ${title}`);
+    const start = new Date(`${listData.week.date_start}T00:00:00Z`);
+    const end = new Date(`${listData.week.date_end}T00:00:00Z`);
+    for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86400000)) {
+      const prefix = slotPrefixFromDate(d);
+      const daySlots = [`${prefix}_lunch`, `${prefix}_dinner`];
+      for (const slot of daySlots) {
+        const s = slots[slot] || {};
+        const titleRaw = s.free_text || s.recipe_id || "";
+        const title = titleRaw ? titleRaw : "XXXX";
+        lines.push(`${labelMap[slot]}: ${title}`);
+      }
     }
     return toAscii(lines.join("\n"));
   }
@@ -2385,9 +2380,11 @@ export default function CockpitWeek() {
 
             {!shoppingLoading && !shoppingError && (
               <div style={{ marginTop: 10, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
-                  Coche ce que tu as deja au placard. Le reste = a acheter.
-                </div>
+                {keepMode === "shopping" ? (
+                  <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
+                    Coche ce que tu as deja au placard. Le reste = a acheter.
+                  </div>
+                ) : null}
                 {(!shoppingList?.items || shoppingList.items.length === 0) && (
                   <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
                     Aucune recette validee avec ingredients. Valide une recette
@@ -2407,70 +2404,74 @@ export default function CockpitWeek() {
                     }}
                   />
                 ) : null}
-                <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-                  {(() => {
-                    const consolidated = consolidateShoppingItems(shoppingList?.items || []);
-                    const unchecked = [];
-                    const checked = [];
-                    consolidated.forEach((it) => {
-                      const key = `${it.item}__${it.unit || ""}`;
-                      if (pantryChecked[key]) checked.push(it);
-                      else unchecked.push(it);
-                    });
-                    unchecked.sort((a, b) => {
-                      const ka = `${a.item}__${a.unit || ""}`;
-                      const kb = `${b.item}__${b.unit || ""}`;
-                      return (pantryOrder[ka] || 0) - (pantryOrder[kb] || 0);
-                    });
-                    return unchecked.concat(checked).map((it, idx) => {
-                      const key = `${it.item}__${it.unit || ""}`;
-                      const isChecked = !!pantryChecked[key];
-                      return (
-                        <label
-                          key={`${key}-${idx}`}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            padding: "4px 0",
-                            opacity: isChecked ? 0.5 : 1
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) =>
-                              {
-                                const nextChecked = e.target.checked;
-                                setPantryChecked((prev) => ({
-                                  ...prev,
-                                  [key]: nextChecked
-                                }));
-                                setPantryOrder((prev) => ({
-                                  ...prev,
-                                  [key]: Date.now()
-                                }));
-                              }
-                            }
-                          />
-                          <span style={{ textDecoration: isChecked ? "line-through" : "none" }}>
-                            {it.qty ? `${it.qty} ` : ""}
-                            {it.unit ? `${it.unit} ` : ""}
-                            {it.item}
-                          </span>
-                        </label>
-                      );
-                    });
-                  })()}
-                </div>
-                {(shoppingList?.missing_recipes || []).length > 0 && (
-                  <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
-                    Recettes sans ingredients:{" "}
-                    {(shoppingList.missing_recipes || [])
-                      .map((r) => r.title)
-                      .join(", ")}
-                  </div>
-                )}
+                {keepMode === "shopping" ? (
+                  <>
+                    <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                      {(() => {
+                        const consolidated = consolidateShoppingItems(shoppingList?.items || []);
+                        const unchecked = [];
+                        const checked = [];
+                        consolidated.forEach((it) => {
+                          const key = `${it.item}__${it.unit || ""}`;
+                          if (pantryChecked[key]) checked.push(it);
+                          else unchecked.push(it);
+                        });
+                        unchecked.sort((a, b) => {
+                          const ka = `${a.item}__${a.unit || ""}`;
+                          const kb = `${b.item}__${b.unit || ""}`;
+                          return (pantryOrder[ka] || 0) - (pantryOrder[kb] || 0);
+                        });
+                        return unchecked.concat(checked).map((it, idx) => {
+                          const key = `${it.item}__${it.unit || ""}`;
+                          const isChecked = !!pantryChecked[key];
+                          return (
+                            <label
+                              key={`${key}-${idx}`}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "4px 0",
+                                opacity: isChecked ? 0.5 : 1
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) =>
+                                  {
+                                    const nextChecked = e.target.checked;
+                                    setPantryChecked((prev) => ({
+                                      ...prev,
+                                      [key]: nextChecked
+                                    }));
+                                    setPantryOrder((prev) => ({
+                                      ...prev,
+                                      [key]: Date.now()
+                                    }));
+                                  }
+                                }
+                              />
+                              <span style={{ textDecoration: isChecked ? "line-through" : "none" }}>
+                                {it.qty ? `${it.qty} ` : ""}
+                                {it.unit ? `${it.unit} ` : ""}
+                                {it.item}
+                              </span>
+                            </label>
+                          );
+                        });
+                      })()}
+                    </div>
+                    {(shoppingList?.missing_recipes || []).length > 0 && (
+                      <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
+                        Recettes sans ingredients:{" "}
+                        {(shoppingList.missing_recipes || [])
+                          .map((r) => r.title)
+                          .join(", ")}
+                      </div>
+                    )}
+                  </>
+                ) : null}
               </div>
             )}
           </div>

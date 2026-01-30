@@ -7,6 +7,7 @@ import os from "os";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 import { DATA_DIR } from "../lib/dataPaths.js";
 import { readDriveState, updateLastRescan } from "../lib/driveState.js";
+import { PROJECT_ROOT } from "../lib/dataPaths.js";
 
 const router = express.Router();
 
@@ -97,9 +98,12 @@ async function resolveRescanScriptPath() {
     path.join(process.cwd(), "..", "recettes_rescan.py"),
     // Si lance depuis la racine
     path.join(process.cwd(), "recettes_rescan.py"),
+    // Projet monté ailleurs (Docker)
+    path.join(PROJECT_ROOT, "recettes_rescan.py"),
     // Legacy path si jamais le script est sous scripts/
     path.join(process.cwd(), "..", "scripts", "recettes_rescan.py"),
-    path.join(process.cwd(), "scripts", "recettes_rescan.py")
+    path.join(process.cwd(), "scripts", "recettes_rescan.py"),
+    path.join(PROJECT_ROOT, "scripts", "recettes_rescan.py")
   ];
 
   for (const p of candidates) {
@@ -118,6 +122,7 @@ async function resolvePythonBin() {
     // Prefer local venv if present
     path.join(process.cwd(), "..", ".venv", "bin", "python"),
     path.join(process.cwd(), ".venv", "bin", "python"),
+    path.join(PROJECT_ROOT, ".venv", "bin", "python"),
     // Fallbacks
     "python3",
     "python"
