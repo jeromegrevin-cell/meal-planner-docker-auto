@@ -318,6 +318,65 @@ function detectMoveProposal(message) {
   return { from_slot: matches[0], to_slot: matches[1] };
 }
 
+function detectWeekBanConstraint(message) {
+  const raw = String(message || "").trim();
+  if (!raw) return null;
+  const msg = normalizePlain(raw);
+  if (!msg) return null;
+
+  const patterns = [
+    /\bpas de\s+(.+)$/i,
+    /\bplus de\s+(.+)$/i,
+    /\bevite\s+(.+)$/i,
+    /\bévite\s+(.+)$/i
+  ];
+
+  let item = "";
+  for (const re of patterns) {
+    const m = raw.match(re);
+    if (m && m[1]) {
+      item = String(m[1]).trim();
+      break;
+    }
+  }
+  if (!item) return null;
+
+  const trailing = ["cette semaine", "cette semaine-ci", "cette semaine ci", "pour cette semaine"];
+  const itemNorm = normalizePlain(item);
+  for (const t of trailing) {
+    const tNorm = normalizePlain(t);
+    if (itemNorm.endsWith(tNorm)) {
+      item = item.slice(0, itemNorm.length - tNorm.length).trim();
+      break;
+    }
+  }
+  item = item.replace(/^[\"'«»]+|[\"'«»]+$/g, "").trim();
+  if (!item) return null;
+
+  return { constraint: `Interdit: ${item}` };
+}
+
+function extractSansItem(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const m = raw.match(/\bsans\s+(.+)$/i);
+  if (!m || !m[1]) return "";
+  return String(m[1]).trim();
+}
+
+function removeItemFromTitle(title, itemRaw) {
+  const titleStr = String(title || "").trim();
+  const item = normalizePlain(itemRaw).trim();
+  if (!titleStr || !item) return titleStr;
+
+  const words = item.split(" ").filter(Boolean);
+  if (words.length === 0) return titleStr;
+  const pattern = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\W+");
+  const re = new RegExp(`\\s*(,|et|avec|&)?\\s*${pattern}\\b`, "i");
+  const next = titleStr.replace(re, "").replace(/\s{2,}/g, " ").trim();
+  return next.replace(/\s*[,;–—-]\s*$/, "").trim();
+}
+
 function detectReplaceProposal(message) {
   const raw = String(message || "").trim();
   if (!raw) return null;
@@ -376,9 +435,23 @@ function detectReplaceProposal(message) {
   if (!title) return null;
 
   title = title.replace(/^["'«»]+|["'«»]+$/g, "").trim();
+  const sansItem = extractSansItem(title);
+  title = stripSansClause(title);
+  if (sansItem) {
+    title = removeItemFromTitle(title, sansItem);
+  }
   if (!title) return null;
 
   return { slot, title };
+}
+
+function stripSansClause(title) {
+  if (!title) return "";
+  const cleaned = String(title)
+    .replace(/\s+(sans)\s+.+$/i, "")
+    .replace(/\s*[,;–—-]\s*$/g, "")
+    .trim();
+  return cleaned;
 }
 
 function parseProposalLines(lines, slots, existingTitles = null, existingKeys = null) {
@@ -1239,6 +1312,15 @@ router.post("/commands/parse", async (req, res) => {
       });
     }
 
+    const banAction = detectWeekBanConstraint(message);
+    if (banAction) {
+      return res.json({
+        ok: true,
+        action: { action_type: "add_constraint_week", ...banAction },
+        summary: `Ajouter contrainte semaine: "${banAction.constraint}"`
+      });
+    }
+
     const openai = getOpenAIClient();
     if (!openai) return res.status(500).json({ error: "openai_not_configured" });
 
@@ -1261,6 +1343,7 @@ router.post("/commands/parse", async (req, res) => {
       'Utilisateur: "annule mercredi dîner" -> {"action_type":"cancel_slot","slot":"wed_dinner"}',
       'Utilisateur: "pas de repas vendredi soir" -> {"action_type":"cancel_slot","slot":"fri_dinner"}',
       'Utilisateur: "mets le repas du samedi déjeuner au jeudi dîner" -> {"action_type":"move_slot","from_slot":"sat_lunch","to_slot":"thu_dinner"}',
+      'Utilisateur: "pas d’omelette cette semaine" -> {"action_type":"add_constraint_week","constraint":"Interdit: omelette"}',
       "Slots disponibles:",
       slotLines,
       "Réponds STRICTEMENT en JSON avec ces clés:",
@@ -1295,7 +1378,12 @@ router.post("/commands/parse", async (req, res) => {
     let summary = "";
     if (actionType === "replace_proposal") {
       const slot = action?.slot;
-      const title = action?.title;
+      const rawTitle = String(action?.title || "");
+      const sansItem = extractSansItem(rawTitle);
+      let title = stripSansClause(rawTitle);
+      if (sansItem) {
+        title = removeItemFromTitle(title, sansItem);
+      }
       summary = `Remplacer ${SLOT_LABELS[slot] || slot} par "${title}"`;
       return res.json({ ok: true, action, summary });
     }
