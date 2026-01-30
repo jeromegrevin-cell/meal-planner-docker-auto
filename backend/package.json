@@ -11,7 +11,7 @@
     "prestart": "node scripts/check-json.js",
     "start": "node src/index.js",
     "predev": "node scripts/check-json.js",
-    "dev": "nodemon --legacy-watch --ignore data/drive_jobs/** --ignore data/chat_sessions/** src/index.js"
+    "dev": "nodemon --legacy-watch src/index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

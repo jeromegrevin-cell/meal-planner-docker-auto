@@ -282,6 +282,105 @@ function detectCancelSlot(message) {
   return null;
 }
 
+function detectMoveProposal(message) {
+  const raw = String(message || "").trim();
+  if (!raw) return null;
+  const msg = normalizePlain(raw);
+  if (!msg) return null;
+
+  const dayMap = {
+    lundi: "mon",
+    mardi: "tue",
+    mercredi: "wed",
+    jeudi: "thu",
+    vendredi: "fri",
+    samedi: "sat",
+    dimanche: "sun"
+  };
+  const lunchHints = ["dejeuner", "midi"];
+  const dinnerHints = ["diner", "soir"];
+
+  const matches = [];
+  const re = /(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|midi|diner|soir)/g;
+  let m;
+  while ((m = re.exec(msg)) !== null) {
+    const day = dayMap[m[1]];
+    const meal = m[2];
+    const isLunch = lunchHints.includes(meal);
+    const isDinner = dinnerHints.includes(meal);
+    if (!day || (isLunch && isDinner) || (!isLunch && !isDinner)) continue;
+    matches.push(`${day}_${isLunch ? "lunch" : "dinner"}`);
+    if (matches.length >= 2) break;
+  }
+  if (matches.length < 2) return null;
+  if (matches[0] === matches[1]) return null;
+
+  return { from_slot: matches[0], to_slot: matches[1] };
+}
+
+function detectReplaceProposal(message) {
+  const raw = String(message || "").trim();
+  if (!raw) return null;
+  const msg = normalizePlain(raw);
+  if (!msg) return null;
+
+  const dayMap = {
+    lundi: "mon",
+    mardi: "tue",
+    mercredi: "wed",
+    jeudi: "thu",
+    vendredi: "fri",
+    samedi: "sat",
+    dimanche: "sun"
+  };
+  const lunchHints = ["dejeuner", "midi"];
+  const dinnerHints = ["diner", "soir"];
+
+  let day = null;
+  for (const [label, prefix] of Object.entries(dayMap)) {
+    if (msg.includes(label)) {
+      day = prefix;
+      break;
+    }
+  }
+  if (!day) return null;
+
+  const isLunch = lunchHints.some((h) => msg.includes(h));
+  const isDinner = dinnerHints.some((h) => msg.includes(h));
+  if ((isLunch && isDinner) || (!isLunch && !isDinner)) return null;
+  const slot = `${day}_${isLunch ? "lunch" : "dinner"}`;
+  if (!SLOT_LABELS[slot]) return null;
+
+  let title = "";
+  const lower = raw.toLowerCase();
+  const setPhrase = ["ce sera", "ça sera", "c est", "c'est", "sera"];
+  let idx = -1;
+  for (const p of setPhrase) {
+    const i = lower.indexOf(p);
+    if (i !== -1) {
+      idx = i + p.length;
+      break;
+    }
+  }
+  if (idx !== -1) {
+    title = raw.slice(idx).trim();
+  }
+  if (!title) {
+    const m = raw.match(/[:=]\s*(.+)$/);
+    if (m) title = String(m[1] || "").trim();
+  }
+  if (!title) {
+    const m = raw.match(/[-–—]\s*(.+)$/);
+    if (m) title = String(m[1] || "").trim();
+  }
+  if (!title) return null;
+
+  title = title.replace(/^["'«»]+|["'«»]+$/g, "").trim();
+  if (!title) return null;
+
+  return { slot, title };
+}
+
 function parseProposalLines(lines, slots, existingTitles = null, existingKeys = null) {
   const slotSet = new Set(slots);
   const titles = new Set();
@@ -1122,6 +1221,24 @@ router.post("/commands/parse", async (req, res) => {
       });
     }
 
+    const replaceAction = detectReplaceProposal(message);
+    if (replaceAction) {
+      return res.json({
+        ok: true,
+        action: { action_type: "replace_proposal", ...replaceAction },
+        summary: `Remplacer ${SLOT_LABELS[replaceAction.slot]} par "${replaceAction.title}"`
+      });
+    }
+
+    const moveAction = detectMoveProposal(message);
+    if (moveAction) {
+      return res.json({
+        ok: true,
+        action: { action_type: "move_slot", ...moveAction },
+        summary: `Déplacer ${SLOT_LABELS[moveAction.from_slot]} vers ${SLOT_LABELS[moveAction.to_slot]}`
+      });
+    }
+
     const openai = getOpenAIClient();
     if (!openai) return res.status(500).json({ error: "openai_not_configured" });
 
@@ -1131,6 +1248,7 @@ router.post("/commands/parse", async (req, res) => {
       "Ta tâche: proposer UNE action structurée à valider.",
       "Actions possibles:",
       "- replace_proposal: remplace une proposition pour un slot (sans générer de fiche).",
+      "- move_slot: déplace le repas d’un slot vers un autre.",
       "- cancel_slot: annule un repas (vide le slot et supprime les propositions).",
       "- add_constraint_week: ajoute une contrainte pour la semaine.",
       "- add_constraint_global: ajoute une contrainte permanente.",
@@ -1142,12 +1260,14 @@ router.post("/commands/parse", async (req, res) => {
       "Exemples:",
       'Utilisateur: "annule mercredi dîner" -> {"action_type":"cancel_slot","slot":"wed_dinner"}',
       'Utilisateur: "pas de repas vendredi soir" -> {"action_type":"cancel_slot","slot":"fri_dinner"}',
+      'Utilisateur: "mets le repas du samedi déjeuner au jeudi dîner" -> {"action_type":"move_slot","from_slot":"sat_lunch","to_slot":"thu_dinner"}',
       "Slots disponibles:",
       slotLines,
       "Réponds STRICTEMENT en JSON avec ces clés:",
-      '{"action_type":"replace_proposal|cancel_slot|add_constraint_week|add_constraint_global|remove_constraint_week|remove_constraint_global|chat_recipe|chat_reply","slot":"mon_dinner","title":"...", "constraint":"...", "message":"...", "recipe_title":"..."}',
+      '{"action_type":"replace_proposal|cancel_slot|move_slot|add_constraint_week|add_constraint_global|remove_constraint_week|remove_constraint_global|chat_recipe|chat_reply","slot":"mon_dinner","title":"...", "from_slot":"mon_dinner", "to_slot":"tue_dinner", "constraint":"...", "message":"...", "recipe_title":"..."}',
       "Règles:",
       "- slot requis seulement pour replace_proposal et cancel_slot.",
+      "- from_slot et to_slot requis pour move_slot.",
       "- title requis seulement pour replace_proposal.",
       "- constraint requis pour add/remove constraint.",
       "- message requis pour chat_reply.",
@@ -1182,6 +1302,12 @@ router.post("/commands/parse", async (req, res) => {
     if (actionType === "cancel_slot") {
       const slot = action?.slot;
       summary = `Annuler ${SLOT_LABELS[slot] || slot}`;
+      return res.json({ ok: true, action, summary });
+    }
+    if (actionType === "move_slot") {
+      const fromSlot = action?.from_slot;
+      const toSlot = action?.to_slot;
+      summary = `Déplacer ${SLOT_LABELS[fromSlot] || fromSlot} vers ${SLOT_LABELS[toSlot] || toSlot}`;
       return res.json({ ok: true, action, summary });
     }
     if (actionType === "add_constraint_week") {
@@ -1321,6 +1447,82 @@ router.post("/commands/apply", async (req, res) => {
         slot,
         week: weekData,
         menu_proposals: { [slot]: [] }
+      });
+    }
+
+    if (type === "move_slot") {
+      const fromSlot = String(action.from_slot || "");
+      const toSlot = String(action.to_slot || "");
+      if (!fromSlot || !toSlot) {
+        return res.status(400).json({ error: "missing_from_or_to_slot" });
+      }
+
+      const weekPath = path.join(DATA_DIR, "weeks", `${weekId}.json`);
+      const weekData = await readJson(weekPath).catch(() => null);
+      if (!weekData) return res.status(404).json({ error: "week_not_found" });
+      if (!weekData?.slots?.[fromSlot] || !weekData?.slots?.[toSlot]) {
+        return res.status(400).json({ error: "unknown_slot" });
+      }
+
+      const noLunchSlots = new Set(
+        weekData?.rules_readonly?.no_lunch_slots || ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"]
+      );
+      if (noLunchSlots.has(toSlot)) {
+        return res.status(400).json({ error: "slot_not_allowed" });
+      }
+
+      const source = weekData.slots[fromSlot] || {};
+      const hasSlotData =
+        source?.validated === true || source?.recipe_id || (source?.free_text || "").trim();
+
+      if (hasSlotData) {
+        const target = weekData.slots[toSlot] || {};
+        weekData.slots[toSlot] = {
+          ...target,
+          recipe_id: source.recipe_id || null,
+          free_text: source.free_text || "",
+          validated: source.validated === true,
+          source_type: source.source_type || null
+        };
+        weekData.slots[fromSlot] = {
+          ...source,
+          recipe_id: null,
+          free_text: "",
+          validated: false,
+          source_type: null
+        };
+        weekData.updated_at = nowIso();
+        await writeJson(weekPath, weekData);
+        return res.json({
+          ok: true,
+          action_applied: type,
+          from_slot: fromSlot,
+          to_slot: toSlot,
+          week: weekData
+        });
+      }
+
+      const { path: p, data } = await ensureChatFile(weekId);
+      if (!data.menu_proposals || typeof data.menu_proposals !== "object") {
+        data.menu_proposals = {};
+      }
+      const sourceProposals = data.menu_proposals[fromSlot] || [];
+      if (!sourceProposals.length) {
+        return res.status(404).json({ error: "nothing_to_move" });
+      }
+      data.menu_proposals[toSlot] = sourceProposals;
+      data.menu_proposals[fromSlot] = [];
+      data.updated_at = nowIso();
+      await safeWriteChat(p, data);
+      return res.json({
+        ok: true,
+        action_applied: type,
+        from_slot: fromSlot,
+        to_slot: toSlot,
+        menu_proposals: {
+          [fromSlot]: [],
+          [toSlot]: sourceProposals
+        }
       });
     }
 
