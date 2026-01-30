@@ -506,6 +506,11 @@ export default function CockpitWeek() {
 
   function clearChat() {
     setChatMessages([]);
+    try {
+      if (week?.week_id) {
+        window.localStorage.removeItem(`mp_chat_${week.week_id}`);
+      }
+    } catch (_e) {}
   }
 
   async function openShoppingList(mode = "shopping") {
@@ -1034,6 +1039,25 @@ export default function CockpitWeek() {
     }
     setFreeTextBySlot(next);
   }, [week?.week_id]);
+
+  useEffect(() => {
+    if (!week?.week_id) return;
+    try {
+      const raw = window.localStorage.getItem(`mp_chat_${week.week_id}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setChatMessages(parsed);
+      }
+    } catch (_e) {}
+  }, [week?.week_id]);
+
+  useEffect(() => {
+    if (!week?.week_id) return;
+    try {
+      window.localStorage.setItem(`mp_chat_${week.week_id}`, JSON.stringify(chatMessages));
+    } catch (_e) {}
+  }, [chatMessages, week?.week_id]);
 
   // --------------------
   // Actions
