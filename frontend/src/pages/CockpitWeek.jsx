@@ -504,6 +504,10 @@ export default function CockpitWeek() {
     );
   }
 
+  function clearChat() {
+    setChatMessages([]);
+  }
+
   async function openShoppingList(mode = "shopping") {
     if (!week?.week_id) return;
     setKeepMode(mode);
@@ -2063,16 +2067,36 @@ export default function CockpitWeek() {
           maxHeight: "calc(100vh - 32px)"
         }}
       >
-        <div style={{ fontWeight: 700 }}>Chat</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontWeight: 700 }}>Chat</div>
+          <button
+            type="button"
+            onClick={clearChat}
+            style={{
+              fontSize: 11,
+              padding: "2px 6px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              background: "#f9fafb",
+              cursor: "pointer"
+            }}
+            aria-label="Clear chat"
+          >
+            🧹 Clear chat
+          </button>
+        </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <input
-            type="text"
+          <textarea
+            rows={4}
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             placeholder="Écrire une demande..."
-            style={{ flex: 1, fontSize: 12 }}
+            style={{ flex: 1, fontSize: 12, resize: "vertical" }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") sendChatMessage();
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendChatMessage();
+              }
             }}
           />
           <button
