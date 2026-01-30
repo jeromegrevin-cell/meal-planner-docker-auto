@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+# Block commits that include secrets (API keys, credentials files).
+block=0
+
+staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"
+
+for f in $staged_files; do
+  case "$f" in
+    credentials/*|**/credentials/*|*openai_api_key.txt)
+      echo "ERROR: refusing to commit secrets file: $f" >&2
+      block=1
+      continue
+      ;;
+  esac
+
+  # Only scan text files
+  if git diff --cached --numstat -- "$f" | awk '{exit ($1 == "-" && $2 == "-" ? 0 : 1)}'; then
+    continue
+  fi
+
+  if git diff --cached -- "$f" | grep -E -q '^\+.*(OPENAI_API_KEY|MEAL_PLANNER_API_KEY|api[_-]?key)[:= ]+[^ ]' &&
+     ! git diff --cached -- "$f" | grep -E -q '^\+.*(OPENAI_API_KEY|MEAL_PLANNER_API_KEY)[^#]*\$\{[A-Z0-9_]+\}'; then
+    echo "ERROR: potential API key staged in $f" >&2
+    block=1
+  fi
+
+  if git diff --cached -- "$f" | grep -E -q '^\+.*\bsk-[A-Za-z0-9]{20,}\b'; then
+    echo "ERROR: potential OpenAI key staged in $f" >&2
+    block=1
+  fi
+done
+
+if [ "$block" -ne 0 ]; then
+  echo "Commit blocked. Remove secrets and try again." >&2
+  exit 1
+fi
+
+exit 0

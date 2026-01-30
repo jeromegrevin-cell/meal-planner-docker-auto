@@ -7,6 +7,9 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=3002
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - MEAL_PLANNER_SECRETS_DIR=/run/meal-planner-secrets
       - MEAL_PLANNER_API_KEY=${MEAL_PLANNER_API_KEY}
       - MEAL_PLANNER_API_PROTECT_ALL=${MEAL_PLANNER_API_PROTECT_ALL:-1}
       - MEAL_PLANNER_PDFS_PUBLIC=${MEAL_PLANNER_PDFS_PUBLIC:-0}
@@ -16,6 +19,7 @@ services:
     volumes:
       - ./backend:/usr/src/app
       - /usr/src/app/node_modules
+      - /Users/Jerome/meal-planner-secrets:/run/meal-planner-secrets:ro
     command: sh -c "npm install && npm run dev"
 
   frontend:

@@ -18,8 +18,16 @@ const CHAT_RETENTION_DAYS = Number(process.env.CHAT_RETENTION_DAYS || 0);
 let cachedClient = null;
 let cachedKey = null;
 
-function readOpenAIKeyFromSecretsDir() {
+function resolveSecretsDir() {
   const secretsDir = (process.env.MEAL_PLANNER_SECRETS_DIR || "").trim();
+  if (secretsDir) return secretsDir;
+  const fallback = path.join(PROJECT_ROOT, "credentials");
+  if (fsSync.existsSync(fallback)) return fallback;
+  return "";
+}
+
+function readOpenAIKeyFromSecretsDir() {
+  const secretsDir = resolveSecretsDir();
   if (!secretsDir) return "";
   const keyPath = path.join(secretsDir, "openai_api_key.txt");
   if (!fsSync.existsSync(keyPath)) return "";

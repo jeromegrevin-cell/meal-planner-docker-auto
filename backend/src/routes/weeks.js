@@ -4,7 +4,7 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import OpenAI from "openai";
 import { readJson, writeJson } from "../lib/jsonStore.js";
-import { DATA_DIR } from "../lib/dataPaths.js";
+import { DATA_DIR, PROJECT_ROOT } from "../lib/dataPaths.js";
 
 const router = express.Router();
 
@@ -18,6 +18,19 @@ function nowIso() {
 
 function readOpenAIKeyFromSecretsDir() {
   const secretsDir = (process.env.MEAL_PLANNER_SECRETS_DIR || "").trim();
+  if (!secretsDir) {
+    const fallback = path.join(PROJECT_ROOT, "credentials");
+    if (fsSync.existsSync(fallback)) {
+      const keyPath = path.join(fallback, "openai_api_key.txt");
+      if (!fsSync.existsSync(keyPath)) return "";
+      try {
+        const raw = fsSync.readFileSync(keyPath, "utf8");
+        return String(raw || "").trim();
+      } catch {
+        return "";
+      }
+    }
+  }
   if (!secretsDir) return "";
   const keyPath = path.join(secretsDir, "openai_api_key.txt");
   if (!fsSync.existsSync(keyPath)) return "";

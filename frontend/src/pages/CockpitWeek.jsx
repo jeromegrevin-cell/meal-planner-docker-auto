@@ -1034,6 +1034,10 @@ export default function CockpitWeek() {
   // --------------------
   // Actions
   // --------------------
+  async function onInitWeek() {
+    await generateProposals();
+  }
+
   async function onChangeWeek(id) {
     const w = await loadWeek(id);
 
@@ -1061,12 +1065,12 @@ export default function CockpitWeek() {
   async function onPrepareWeek() {
     if (!prepStart || !prepEnd) {
       alert("Merci de renseigner une date de début et une date de fin.");
-      return;
+      return null;
     }
-    const computedWeekId = buildWeekIdFromRange(prepStart, prepEnd);
+    const computedWeekId = buildWeekIdForDates(prepStart, weekIds);
     if (!computedWeekId) {
       alert("Impossible de calculer la référence de semaine.");
-      return;
+      return null;
     }
     try {
       await fetchJson("/api/weeks/prepare", {
@@ -1082,15 +1086,16 @@ export default function CockpitWeek() {
       const msg = String(e?.message || "");
       if (msg.includes("week_exists")) {
         alert("Semaine déjà existante — revoir les paramètres de création.");
-        return;
+        return null;
       }
       alert(`Préparation impossible: ${msg}`);
-      return;
+      return null;
     }
     await loadWeeksList();
     await onChangeWeek(computedWeekId);
 
     setPrepWeekId(computedWeekId);
+    return computedWeekId;
   }
 
   async function onPeopleChange(slot, adults, children) {
@@ -1686,6 +1691,13 @@ export default function CockpitWeek() {
               }}
             />
             <div style={{ height: 4 }} />
+            <button
+              onClick={onInitWeek}
+              disabled={!prepStart || !prepEnd}
+              style={{ fontSize: 12, padding: "3px 6px", alignSelf: "flex-start" }}
+            >
+              Initier
+            </button>
           </div>
         </section>
 
@@ -1698,7 +1710,7 @@ export default function CockpitWeek() {
             disabled={!week?.week_id}
             style={{ fontSize: 12, padding: "3px 6px" }}
           >
-            Proposer menus
+            Nouveaux menus
           </button>
           <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
             Les recettes non validées seront remplacées.
