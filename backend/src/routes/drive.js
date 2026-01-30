@@ -369,7 +369,7 @@ router.post("/rescan", async (_req, res) => {
     logLine(
       `MEAL_PLANNER_SECRETS_DIR=${env.MEAL_PLANNER_SECRETS_DIR || "unset"}`
     );
-    const child = spawn("bash", ["-lc", command], {
+    const child = spawn(pythonBin, ["-u", scriptPath], {
       cwd: projectRoot,
       env
     });

@@ -524,14 +524,45 @@ export default function Home() {
           </button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <button onClick={onRescanDrive}>
-            Rescan recettes{rescanRequired ? " ⚠️" : ""}
+          <button
+            onClick={onRescanDrive}
+            disabled={rescanStatus?.latest?.status === "running"}
+          >
+            {rescanStatus?.latest?.status === "running" ? "Rescan en cours…" : "Rescan recettes"}
+            {rescanRequired ? " ⚠️" : ""}
           </button>
           {rescanStatus?.progress?.total ? (
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              {rescanStatus?.latest?.status === "running" ? "Rescan en cours" : "Dernier rescan"} :{" "}
-              {rescanStatus.progress.scanned}/{rescanStatus.progress.total}
-            </div>
+            (() => {
+              const scanned = rescanStatus.progress.scanned || 0;
+              const total = rescanStatus.progress.total || 0;
+              const pct = total ? Math.min(100, Math.max(0, Math.round((scanned / total) * 100))) : 0;
+              const isRunning = rescanStatus?.latest?.status === "running";
+              return (
+                <div style={{ width: 220 }}>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    {isRunning ? "Rescan en cours" : "Dernier rescan"} : {scanned}/{total} ({pct}%)
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      height: 6,
+                      borderRadius: 999,
+                      background: "#e5e7eb",
+                      overflow: "hidden"
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${pct}%`,
+                        height: "100%",
+                        background: isRunning ? "#2563eb" : "#9ca3af",
+                        transition: "width 200ms ease"
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })()
           ) : null}
           {formatDateTime(rescanStatus?.last_rescan_at) ? (
             <div style={{ fontSize: 12, opacity: 0.75 }}>
