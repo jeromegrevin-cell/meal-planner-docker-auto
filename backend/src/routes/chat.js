@@ -489,18 +489,44 @@ function normalizeDriveTitle(raw) {
 }
 
 async function listDriveIndexTitles() {
-  const csvPath = path.join(PROJECT_ROOT, "recipes_list.csv");
-  if (!fsSync.existsSync(csvPath)) return [];
-  const raw = fsSync.readFileSync(csvPath, "utf8");
-  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (lines.length <= 1) return [];
-  const titles = [];
-  for (let i = 1; i < lines.length; i += 1) {
-    const parts = lines[i].split(";");
-    const title = normalizeDriveTitle(parts[0] || "");
-    if (title) titles.push(title);
+  const csvCandidates = [
+    path.join(PROJECT_ROOT, "recipes_list.csv"),
+    path.join(path.resolve(PROJECT_ROOT, ".."), "recipes_list.csv")
+  ];
+  for (const csvPath of csvCandidates) {
+    if (!fsSync.existsSync(csvPath)) continue;
+    const raw = fsSync.readFileSync(csvPath, "utf8");
+    const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length <= 1) continue;
+    const titles = [];
+    for (let i = 1; i < lines.length; i += 1) {
+      const parts = lines[i].split(";");
+      const title = normalizeDriveTitle(parts[0] || "");
+      if (title) titles.push(title);
+    }
+    if (titles.length) return titles;
   }
-  return titles;
+
+  const jsonCandidates = [
+    path.join(PROJECT_ROOT, "recettes_index.json"),
+    path.join(path.resolve(PROJECT_ROOT, ".."), "recettes_index.json")
+  ];
+  for (const jsonPath of jsonCandidates) {
+    if (!fsSync.existsSync(jsonPath)) continue;
+    try {
+      const raw = fsSync.readFileSync(jsonPath, "utf8");
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data)) continue;
+      const titles = data
+        .map((item) => normalizeDriveTitle(item?.title || ""))
+        .filter(Boolean);
+      if (titles.length) return titles;
+    } catch {
+      // ignore invalid JSON
+    }
+  }
+
+  return [];
 }
 
 function newProposalId() {
@@ -884,11 +910,15 @@ router.post("/proposals/generate", async (req, res) => {
     );
 
     const slotCount = filteredSlots.length;
-    const minAI = Math.ceil(slotCount * 0.8);
-    const maxAI = Math.floor(slotCount * 0.8);
+    const minAI = Math.floor(slotCount * 0.8);
+    const maxAI = Math.ceil(slotCount * 0.8);
     const minDrive = slotCount - maxAI;
     const maxDrive = slotCount - minAI;
-    const driveSlotsCount = Math.min(driveCandidates.length, Math.max(0, maxDrive));
+    const desiredDrive = Math.round(slotCount * 0.2);
+    const driveSlotsCount = Math.min(
+      driveCandidates.length,
+      Math.max(minDrive, Math.min(maxDrive, desiredDrive))
+    );
     const ratioWarning = driveSlotsCount < minDrive ? "drive_insufficient_for_max_ai" : null;
 
     if (driveCandidates.length > 0 && driveSlotsCount > 0) {
@@ -1469,7 +1499,16 @@ router.post("/commands/apply", async (req, res) => {
         return res.status(400).json({ error: "slot_not_allowed" });
       }
       if (weekData?.slots?.[slot]?.validated === true) {
-        return res.status(409).json({ error: "slot_already_validated" });
+        weekData.slots[slot] = {
+          ...weekData.slots[slot],
+          recipe_id: null,
+          free_text: "",
+          validated: false,
+          source_type: null
+        };
+        weekData.updated_at = nowIso();
+        const weekPath = path.join(DATA_DIR, "weeks", `${weekId}.json`);
+        await writeJson(weekPath, weekData);
       }
 
       const { path: p, data } = await ensureChatFile(weekId);

@@ -6,7 +6,7 @@ import os from "os";
 import fsSync from "fs";
 import { fileURLToPath } from "url";
 import { readJson, writeJson } from "../lib/jsonStore.js";
-import { DATA_DIR } from "../lib/dataPaths.js";
+import { DATA_DIR, PROJECT_ROOT } from "../lib/dataPaths.js";
 import { validateRecipe } from "../lib/recipeValidation.js";
 import { updateLastUpload } from "../lib/driveState.js";
 
@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 
 const RECIPES_DIR = path.join(DATA_DIR, "recipes");
 const PDFS_DIR = path.join(__dirname, "../../pdfs");
-const ROOT_DIR = path.resolve(__dirname, "../../..");
+const ROOT_DIR = PROJECT_ROOT;
 const DRIVE_INDEX = path.join(ROOT_DIR, "recettes_index.json");
 
 const STATUS_ENUM = new Set(["DRAFT", "VALIDEE", "A_MODIFIER", "REJETEE", "EXTERNE"]);

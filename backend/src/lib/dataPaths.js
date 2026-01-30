@@ -28,6 +28,8 @@ function resolveDataDir() {
 const DATA_DIR = resolveDataDir();
 
 function resolveProjectRoot(dataDir) {
+  const envRoot = (process.env.MEAL_PLANNER_PROJECT_ROOT || "").trim();
+  if (envRoot) return envRoot;
   const norm = path.normalize(dataDir);
   if (norm.endsWith(path.join("backend", "data"))) {
     return path.resolve(dataDir, "..", "..");
