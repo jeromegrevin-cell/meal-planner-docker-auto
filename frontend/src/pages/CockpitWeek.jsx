@@ -315,6 +315,7 @@ export default function CockpitWeek() {
   const [proposalRecipe, setProposalRecipe] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState(null);
+  const [validatingBySlot, setValidatingBySlot] = useState({});
   const [uploadingWeek, setUploadingWeek] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
@@ -1159,6 +1160,8 @@ export default function CockpitWeek() {
   }
 
   async function onValidateProposal(slot, proposal) {
+    if (validatingBySlot?.[slot]) return;
+    setValidatingBySlot((prev) => ({ ...prev, [slot]: true }));
     const recipeId = proposal?.recipe_id ? String(proposal.recipe_id) : "";
     const title = String(proposal?.title || "").trim();
     const sourceType = proposal?.source ? String(proposal.source) : null;
@@ -1167,29 +1170,35 @@ export default function CockpitWeek() {
       ? { recipe_id: recipeId, free_text: null }
       : { recipe_id: null, free_text: title };
 
-    const j = await fetchJson(
-      `/api/weeks/${encodeURIComponent(week.week_id)}/slots/${encodeURIComponent(
-        slot
-      )}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...payload,
-          source_type: sourceType
-        })
+    try {
+      const j = await fetchJson(
+        `/api/weeks/${encodeURIComponent(week.week_id)}/slots/${encodeURIComponent(
+          slot
+        )}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...payload,
+            source_type: sourceType
+          })
+        }
+      );
+
+      setWeek(j.week);
+
+      if (slot === selectedSlot) {
+        const s = j.week?.slots?.[slot] || null;
+        if (s?.validated === true) await loadRecipe(s?.recipe_id || null);
+        else setRecipe(null);
       }
-    );
 
-    setWeek(j.week);
-
-    if (slot === selectedSlot) {
-      const s = j.week?.slots?.[slot] || null;
-      if (s?.validated === true) await loadRecipe(s?.recipe_id || null);
-      else setRecipe(null);
+      await loadMenuProposals(week.week_id);
+    } catch (e) {
+      alert(`Valider failed: ${e.message}`);
+    } finally {
+      setValidatingBySlot((prev) => ({ ...prev, [slot]: false }));
     }
-
-    await loadMenuProposals(week.week_id);
   }
 
   async function onDevalidateSlot(slot) {
@@ -1827,6 +1836,7 @@ export default function CockpitWeek() {
 
                     const proposals = menuProposals?.[slot] || [];
                     const proposalLoading = !!proposalLoadingBySlot?.[slot];
+                    const isValidating = !!validatingBySlot?.[slot];
                     const proposalError = proposalErrorBySlot?.[slot];
                     const people = normalizePeopleFromSlot(s?.people);
                     const totalPeople = peopleTotal(people);
@@ -2035,13 +2045,19 @@ export default function CockpitWeek() {
 
                               <IconButton
                                 icon="✅"
-                                label="Valider pour la semaine"
+                                label={isValidating ? "Validation en cours" : "Valider pour la semaine"}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onValidateProposal(slot, p);
                                 }}
+                                disabled={isValidating}
                                 style={{ padding: "4px 6px" }}
                               />
+                              {isValidating ? (
+                                <span style={{ fontSize: 11, opacity: 0.75 }}>
+                                  Validation…
+                                </span>
+                              ) : null}
                               <IconButton
                                 icon="👁️"
                                 label="Voir"
