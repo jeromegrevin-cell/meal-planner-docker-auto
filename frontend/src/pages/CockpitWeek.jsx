@@ -1788,8 +1788,8 @@ export default function CockpitWeek() {
             <button
               onClick={onInitWeek}
               disabled={!prepStart || !prepEnd}
-              className="btn-ghost"
-              style={{ fontSize: 12, padding: "3px 6px", alignSelf: "flex-start" }}
+              className="btn-side"
+              style={{ fontSize: 13, padding: "3px 6px", alignSelf: "flex-start" }}
             >
               Initier
             </button>
@@ -1803,8 +1803,8 @@ export default function CockpitWeek() {
           <button
             onClick={() => generateProposals(week?.week_id)}
             disabled={!week?.week_id}
-            className="btn-primary"
-            style={{ fontSize: 12, padding: "3px 6px" }}
+            className="btn-side"
+            style={{ fontSize: 13, padding: "3px 6px" }}
           >
             Nouveaux menus
           </button>
@@ -1813,8 +1813,8 @@ export default function CockpitWeek() {
           </div>
         </section>
 
-        <section className="panel">
-          <div className="panel-title" style={{ marginBottom: 10 }}>
+        <section className="panel" style={{ padding: 10 }}>
+          <div className="panel-title" style={{ marginBottom: 6 }}>
             4 · Upload
           </div>
           <div
@@ -1822,7 +1822,7 @@ export default function CockpitWeek() {
             style={{
               fontSize: 12,
               opacity: 0.9,
-              marginTop: 6,
+              marginTop: 4,
               display: "flex",
               alignItems: "center",
               gap: 8,
@@ -1833,7 +1833,7 @@ export default function CockpitWeek() {
             <span>Upload to Drive/Recettes</span>
             <span style={{ fontSize: 16 }}>☁️⬆️</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
             {pendingUploadCount > 0 ? (
               <span style={{ fontSize: 12, opacity: 0.8 }}>
                 {pendingUploadCount}
@@ -1853,21 +1853,24 @@ export default function CockpitWeek() {
             <button
               onClick={() => openShoppingList("menus")}
               disabled={!week?.week_id}
-              style={{ fontSize: 12, padding: "3px 6px" }}
+              className="btn-side"
+              style={{ fontSize: 13, padding: "3px 6px" }}
             >
               Menus
             </button>
             <button
               onClick={() => openShoppingList("recipes")}
               disabled={!week?.week_id}
-              style={{ fontSize: 12, padding: "3px 6px" }}
+              className="btn-side"
+              style={{ fontSize: 13, padding: "3px 6px" }}
             >
               Recettes
             </button>
             <button
               onClick={() => openShoppingList("shopping")}
               disabled={!week?.week_id}
-              style={{ fontSize: 12, padding: "3px 6px" }}
+              className="btn-side"
+              style={{ fontSize: 13, padding: "3px 6px" }}
             >
               Courses
             </button>
@@ -1927,7 +1930,7 @@ export default function CockpitWeek() {
                 }}
               >
                 <td style={{ width: 150, verticalAlign: "top", padding: "10px 6px" }}>
-                  <div style={{ fontWeight: 400 }}>
+                  <div style={{ fontWeight: 400, fontSize: 15 }}>
                     {getSlotLabel(slot)}
                   </div>
 
@@ -1976,7 +1979,7 @@ export default function CockpitWeek() {
                 <td style={{ verticalAlign: "top", padding: "10px 6px 10px 0" }}>
                   {isValidated ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ fontWeight: 400 }}>
+                      <div style={{ fontWeight: 400, fontSize: 15 }}>
                         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
                           {validatedIsDrive ? <DriveIcon size={14} /> : null}
                           {validatedLabel(s)}
@@ -2192,7 +2195,7 @@ export default function CockpitWeek() {
             type="button"
             onClick={clearChat}
             style={{
-              fontSize: 11,
+              fontSize: 13,
               padding: "2px 6px",
               borderRadius: 6,
               border: "1px solid #d1d5db",
@@ -2210,7 +2213,7 @@ export default function CockpitWeek() {
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             placeholder="Écrire une demande..."
-            style={{ flex: 1, fontSize: 12, resize: "vertical" }}
+            style={{ flex: 1, fontSize: 13, resize: "vertical" }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -2221,7 +2224,8 @@ export default function CockpitWeek() {
           <button
             onClick={sendChatMessage}
             disabled={chatLoading || !chatInput.trim()}
-            style={{ fontSize: 12 }}
+            className="btn-side"
+            style={{ fontSize: 13 }}
           >
             Envoyer
           </button>
@@ -2256,7 +2260,7 @@ export default function CockpitWeek() {
                     borderRadius: 8,
                     background: m.role === "user" ? "var(--accent-soft)" : "var(--bg-elev)",
                     border: "1px solid var(--border)",
-                    fontSize: 16
+                    fontSize: 15
                   }}
                 >
                   <span style={{ whiteSpace: "pre-wrap" }}>{m.text}</span>
@@ -2410,7 +2414,8 @@ export default function CockpitWeek() {
                       navigator.clipboard.writeText(keepText);
                     } catch (_e) {}
                   }}
-                  style={{ marginLeft: 10, fontSize: 11 }}
+                  className="btn-modal"
+                  style={{ marginLeft: 10 }}
                 >
                   Copier
                 </button>

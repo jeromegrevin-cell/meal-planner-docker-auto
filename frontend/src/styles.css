@@ -77,7 +77,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 18px;
+  padding: 6px 14px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow);
@@ -140,6 +140,29 @@ button:disabled {
   color: #fff;
   border: 1px solid var(--accent-strong);
   font-weight: 600;
+}
+
+.btn-side {
+  background: #ded4c6;
+  border: 1px solid #c6b8a4;
+  color: var(--ink);
+  font-weight: 400;
+  box-shadow: 0 2px 0 #b8aa97;
+}
+
+.btn-side:hover {
+  border-color: #b8aa97;
+}
+
+.btn-side:active {
+  box-shadow: 0 1px 0 #b8aa97;
+  transform: translateY(1px);
+}
+
+.btn-modal {
+  background: #e7dfd2;
+  border-color: #cfc3b3;
+  font-size: 13px;
 }
 
 .btn-ghost {
