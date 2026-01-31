@@ -1719,7 +1719,7 @@ export default function CockpitWeek() {
   const menuRows = isMenuMode ? Math.min(36, Math.max(6, menuLineCount)) : undefined;
 
   return (
-    <div style={{ display: "flex", gap: 16, padding: 16 }}>
+    <div className="page" style={{ display: "flex", gap: 16 }}>
       <aside
         style={{
           width: 260,
@@ -1729,8 +1729,8 @@ export default function CockpitWeek() {
           gap: 10
         }}
       >
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+        <section className="panel">
+          <div className="panel-title" style={{ marginBottom: 10 }}>
             1 · Choisir une semaine
           </div>
           <select
@@ -1749,8 +1749,8 @@ export default function CockpitWeek() {
           ) : null}
         </section>
 
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+        <section className="panel">
+          <div className="panel-title" style={{ marginBottom: 10 }}>
             2 · Créer une nouvelle semaine
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1788,6 +1788,7 @@ export default function CockpitWeek() {
             <button
               onClick={onInitWeek}
               disabled={!prepStart || !prepEnd}
+              className="btn-ghost"
               style={{ fontSize: 12, padding: "3px 6px", alignSelf: "flex-start" }}
             >
               Initier
@@ -1795,13 +1796,14 @@ export default function CockpitWeek() {
           </div>
         </section>
 
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+        <section className="panel">
+          <div className="panel-title" style={{ marginBottom: 10 }}>
             3 · Proposer les menus
           </div>
           <button
             onClick={() => generateProposals(week?.week_id)}
             disabled={!week?.week_id}
+            className="btn-primary"
             style={{ fontSize: 12, padding: "3px 6px" }}
           >
             Nouveaux menus
@@ -1811,8 +1813,8 @@ export default function CockpitWeek() {
           </div>
         </section>
 
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+        <section className="panel">
+          <div className="panel-title" style={{ marginBottom: 10 }}>
             4 · Upload
           </div>
           <div
@@ -1840,8 +1842,8 @@ export default function CockpitWeek() {
           </div>
         </section>
 
-        <section style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
-          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+        <section className="panel">
+          <div className="panel-title" style={{ marginBottom: 10 }}>
             5 · Listes
           </div>
           <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
@@ -1873,13 +1875,10 @@ export default function CockpitWeek() {
         </section>
       </aside>
 
-      <div
-        aria-hidden="true"
-        style={{ width: 1, background: "var(--border)" }}
-      />
+      <div className="divider-vertical" aria-hidden="true" />
       <main style={{ flex: 1, minWidth: 0 }}>
         {week?.date_start && week?.date_end && (
-          <h2 style={{ margin: "0 0 8px 0" }}>
+          <h2 className="toolbar-title" style={{ margin: "0 0 8px 0" }}>
             {formatWeekRangeTitle(week.date_start, week.date_end)}
           </h2>
         )}
@@ -1923,8 +1922,8 @@ export default function CockpitWeek() {
                 key={slot}
                 onClick={() => setSelectedSlot(slot)}
                 style={{
-                  background: isSelected ? "#eef2ff" : "",
-                  borderBottom: "1px solid #eee"
+                  background: isSelected ? "var(--accent-soft)" : "",
+                  borderBottom: "1px solid var(--border)"
                 }}
               >
                 <td style={{ width: 150, verticalAlign: "top", padding: "10px 6px" }}>
@@ -2081,12 +2080,18 @@ export default function CockpitWeek() {
                       )}
 
                       {showProposals && proposalLoading && (
-                        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                        <div
+                          style={{ marginTop: 6, fontSize: 12 }}
+                          className="status-loading"
+                        >
                           Génération en cours…
                         </div>
                       )}
                       {showProposals && proposalError && (
-                        <div style={{ marginTop: 6, fontSize: 12, color: "#a00" }}>
+                        <div
+                          style={{ marginTop: 6, fontSize: 12 }}
+                          className="status-error"
+                        >
                           Erreur: {proposalError}
                         </div>
                       )}
@@ -2101,9 +2106,9 @@ export default function CockpitWeek() {
                                 marginTop: idx === 0 ? 0 : 6,
                                 alignItems: "center",
                                 padding: "2px 8px",
-                                border: "1px solid #eee",
+                                border: "1px solid var(--border)",
                                 borderRadius: 6,
-                                background: "#fafafa",
+                                background: "var(--bg-elev)",
                                 lineHeight: "18px"
                               }}
                               onClick={(e) => e.stopPropagation()}
@@ -2169,17 +2174,12 @@ export default function CockpitWeek() {
       </table>
       </main>
 
-      <div
-        aria-hidden="true"
-        style={{ width: 1, background: "var(--border)" }}
-      />
+      <div className="divider-vertical" aria-hidden="true" />
       <aside
+        className="panel"
         style={{
           width: 280,
           flexShrink: 0,
-          border: "1px solid #eee",
-          borderRadius: 10,
-          padding: 12,
           display: "flex",
           flexDirection: "column",
           gap: 8,
@@ -2187,7 +2187,7 @@ export default function CockpitWeek() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontWeight: 700 }}>Chat</div>
+          <div className="panel-title">Chat</div>
           <button
             type="button"
             onClick={clearChat}
@@ -2254,8 +2254,8 @@ export default function CockpitWeek() {
                     display: "inline-block",
                     padding: "6px 8px",
                     borderRadius: 8,
-                    background: m.role === "user" ? "#e0ecff" : "#fff",
-                    border: "1px solid #e5e7eb",
+                    background: m.role === "user" ? "var(--accent-soft)" : "var(--bg-elev)",
+                    border: "1px solid var(--border)",
                     fontSize: 16
                   }}
                 >
@@ -2274,30 +2274,17 @@ export default function CockpitWeek() {
       </aside>
 
       {proposalModal && (
-        <div
-          onClick={closeProposalModal}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.25)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16
-          }}
-        >
+        <div onClick={closeProposalModal} className="modal-overlay">
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal"
             style={{
               width: "min(1100px, 96vw)",
-              background: "#fff",
-              borderRadius: 10,
-              padding: 16,
-              border: "1px solid #ddd"
+              padding: 16
             }}
           >
             <div style={{ display: "flex", alignItems: "center" }}>
-              <div style={{ fontWeight: 800 }}>
+              <div className="modal-title">
                 Recette proposée — {getSlotLabel(proposalModal.slot)}
               </div>
               <button
@@ -2331,11 +2318,13 @@ export default function CockpitWeek() {
               )}
 
               {proposalLoading && (
-                <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
+                <div style={{ marginTop: 8 }} className="status-loading">
+                  Chargement...
+                </div>
               )}
 
               {proposalError && (
-                <div style={{ marginTop: 8, color: "#a00" }}>
+                <div style={{ marginTop: 8 }} className="status-error">
                   {proposalError}
                 </div>
               )}
@@ -2393,34 +2382,21 @@ export default function CockpitWeek() {
       )}
 
       {shoppingOpen && (
-        <div
-          onClick={() => setShoppingOpen(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.25)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16
-          }}
-        >
+        <div onClick={() => setShoppingOpen(false)} className="modal-overlay">
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal"
             style={{
               width: "min(1100px, 96vw)",
               height: isMenuMode ? "auto" : "80vh",
               maxHeight: "80vh",
-              background: "#fff",
-              borderRadius: 10,
               padding: 16,
-              border: "1px solid #ddd",
               display: "flex",
               flexDirection: "column"
             }}
           >
             <div style={{ display: "flex", alignItems: "center" }}>
-              <div style={{ fontWeight: 800 }}>
+              <div className="modal-title">
                 {keepMode === "menus"
                   ? "Menus"
                   : keepMode === "recipes"
@@ -2457,10 +2433,14 @@ export default function CockpitWeek() {
             </div>
 
             {shoppingLoading && (
-              <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
+              <div style={{ marginTop: 8 }} className="status-loading">
+                Chargement...
+              </div>
             )}
             {shoppingError && (
-              <div style={{ marginTop: 8, color: "#a00" }}>{shoppingError}</div>
+              <div style={{ marginTop: 8 }} className="status-error">
+                {shoppingError}
+              </div>
             )}
 
             {!shoppingLoading && !shoppingError && (
@@ -2567,30 +2547,17 @@ export default function CockpitWeek() {
       )}
 
       {recipeModal && (
-        <div
-          onClick={closeRecipeModal}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.25)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16
-          }}
-        >
+        <div onClick={closeRecipeModal} className="modal-overlay">
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal"
             style={{
               width: "min(760px, 96vw)",
-              background: "#fff",
-              borderRadius: 10,
-              padding: 16,
-              border: "1px solid #ddd"
+              padding: 16
             }}
           >
             <div style={{ display: "flex", alignItems: "center" }}>
-              <div style={{ fontWeight: 800 }}>
+              <div className="modal-title">
                 Recette validée — {getSlotLabel(recipeModal.slot)}
               </div>
               <button
@@ -2611,10 +2578,12 @@ export default function CockpitWeek() {
             </div>
 
             {recipeModalLoading && (
-              <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
+              <div style={{ marginTop: 8 }} className="status-loading">
+                Chargement...
+              </div>
             )}
             {recipeModalError && (
-              <div style={{ marginTop: 8, color: "#a00" }}>
+              <div style={{ marginTop: 8 }} className="status-error">
                 {recipeModalError}
               </div>
             )}

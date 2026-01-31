@@ -422,8 +422,8 @@ export default function Home() {
   }, [days, selectedDateKey]);
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <div className="page">
+      <div className="toolbar">
         <button
           onClick={() => {
             const now = new Date();
@@ -438,7 +438,7 @@ export default function Home() {
           label="Mois précédent"
           onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
         />
-        <div style={{ fontSize: 20, fontWeight: 700 }}>{monthLabel}</div>
+        <div className="toolbar-title">{monthLabel}</div>
         <IconButton
           icon="›"
           label="Mois suivant"
@@ -448,14 +448,7 @@ export default function Home() {
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button
             onClick={() => navigate("/weeks")}
-            style={{
-              background: "#16a34a",
-              color: "#fff",
-              border: "1px solid #15803d",
-              borderRadius: 6,
-              padding: "6px 10px",
-              fontWeight: 600
-            }}
+            className="btn-primary"
           >
             Générer semaine
           </button>
@@ -465,6 +458,7 @@ export default function Home() {
       <div style={{ marginTop: 12 }}>
         <div
           ref={calendarRef}
+          className="calendar-shell"
           style={{
             maxHeight: calendarMaxHeight,
             overflowY: "auto",
@@ -477,14 +471,14 @@ export default function Home() {
             style={{
               position: "sticky",
               top: 0,
-              background: "#fff",
+              background: "var(--bg-elev)",
               zIndex: 2,
               paddingBottom: calendarHeaderGap
             }}
           >
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
               {WEEKDAYS_FR.map((d) => (
-                <div key={d} style={{ fontWeight: 700, textAlign: "center", fontSize: 12 }}>
+                <div key={d} className="weekday-chip">
                   {d}
                 </div>
               ))}
@@ -529,29 +523,25 @@ export default function Home() {
                   return (
                     <div
                       key={key}
-                      style={{
-                        height: 86,
-                        border: isSelected ? "2px solid #2563eb" : "1px solid #e5e7eb",
-                        borderRadius: 6,
-                        padding: 6,
-                        background: isSelected
-                          ? "#e8f0ff"
-                          : isToday
-                            ? "#dceeff"
-                            : isCurrentMonth
-                              ? "#fff"
-                              : "#f9fafb",
-                        overflow: "hidden"
-                      }}
+                      className={[
+                        "day-card",
+                        isSelected ? "day-card-selected" : "",
+                        isToday ? "day-card-today" : "",
+                        !isCurrentMonth ? "day-card-outside" : ""
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                       onClick={() => {
                         setSelectedDateKey(key);
                         setCurrentMonth(new Date(d.getFullYear(), d.getMonth(), 1));
                       }}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <div style={{ fontWeight: 700, fontSize: 12 }}>{dayLabelCap}</div>
+                        <div style={{ fontWeight: 600, fontSize: 12 }}>{dayLabelCap}</div>
                         {info?.week_id && (
-                          <div style={{ fontSize: 10, opacity: 0.6 }}>{info.week_id}</div>
+                          <div style={{ fontSize: 10 }} className="muted">
+                            {info.week_id}
+                          </div>
                         )}
                       </div>
 
@@ -565,15 +555,8 @@ export default function Home() {
                           return (
                             <div
                               key={`${key}-${k}`}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 4,
-                                padding: "3px 5px",
-                                borderRadius: 5,
-                                background: "#f3f4f6",
-                                cursor: data ? "pointer" : "default"
-                              }}
+                              className="slot-pill"
+                              style={{ cursor: data ? "pointer" : "default" }}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (!data) return;
@@ -583,7 +566,7 @@ export default function Home() {
                               <div
                                 style={{
                                   fontSize: 10,
-                                  fontWeight: 700,
+                                  fontWeight: 600,
                                   width: 26,
                                   opacity: 0.7
                                 }}
@@ -617,13 +600,8 @@ export default function Home() {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
           <button
             onClick={() => setConstraintsOpen(true)}
-            style={{
-              fontSize: 12,
-              padding: "4px 8px",
-              borderRadius: 6,
-              border: "1px solid #d1d5db",
-              background: "#f9fafb"
-            }}
+            className="btn-ghost"
+            style={{ fontSize: 12, padding: "4px 8px" }}
           >
             Contraintes
           </button>
@@ -644,7 +622,7 @@ export default function Home() {
               const isRunning = rescanStatus?.latest?.status === "running";
               return (
                 <div style={{ width: 220 }}>
-                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                  <div style={{ fontSize: 12 }} className="muted">
                     {isRunning ? "Rescan en cours" : "Dernier rescan"} : {scanned}/{total} ({pct}%)
                   </div>
                   <div
@@ -652,7 +630,7 @@ export default function Home() {
                       marginTop: 4,
                       height: 6,
                       borderRadius: 999,
-                      background: "#e5e7eb",
+                      background: "#e6e0d7",
                       overflow: "hidden"
                     }}
                   >
@@ -660,7 +638,7 @@ export default function Home() {
                       style={{
                         width: `${pct}%`,
                         height: "100%",
-                        background: isRunning ? "#2563eb" : "#9ca3af",
+                        background: isRunning ? "var(--accent)" : "#9aa3ad",
                         transition: "width 200ms ease"
                       }}
                     />
@@ -678,30 +656,17 @@ export default function Home() {
       </div>
 
       {modal && (
-        <div
-          onClick={closeModal}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.25)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16
-          }}
-        >
+        <div onClick={closeModal} className="modal-overlay">
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal"
             style={{
               width: "min(760px, 96vw)",
-              background: "#fff",
-              borderRadius: 10,
-              padding: 16,
-              border: "1px solid #ddd"
+              padding: 16
             }}
           >
             <div style={{ display: "flex", alignItems: "center" }}>
-              <div style={{ fontWeight: 800 }}>
+              <div className="modal-title">
                 {modal.dateLabel} — {modal.slotLabel}
               </div>
               <button
@@ -722,10 +687,14 @@ export default function Home() {
             </div>
 
             {modalLoading && (
-              <div style={{ marginTop: 8, opacity: 0.8 }}>Chargement...</div>
+              <div style={{ marginTop: 8 }} className="status-loading">
+                Chargement...
+              </div>
             )}
             {modalError && (
-              <div style={{ marginTop: 8, color: "#a00" }}>{modalError}</div>
+              <div style={{ marginTop: 8 }} className="status-error">
+                {modalError}
+              </div>
             )}
 
             {!modalLoading && !modalError && (

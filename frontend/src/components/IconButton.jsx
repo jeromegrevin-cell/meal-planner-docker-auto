@@ -24,9 +24,9 @@ export default function IconButton({
         justifyContent: "center",
         gap: 6,
         padding: "4px 6px",
-        border: "1px solid #d1d5db",
+        border: "1px solid var(--border)",
         borderRadius: 6,
-        background: "#fff",
+        background: "var(--bg-elev)",
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.5 : 1,
         ...style
@@ -44,10 +44,10 @@ export default function IconButton({
             padding: "2px 6px",
             fontSize: 11,
             whiteSpace: "nowrap",
-            background: "#fff",
-            border: "1px solid #e5e7eb",
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
             borderRadius: 4,
-            boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+            boxShadow: "var(--shadow)",
             zIndex: 10
           }}
         >
