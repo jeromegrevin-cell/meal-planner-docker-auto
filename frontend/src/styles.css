@@ -182,7 +182,7 @@ button:disabled {
 }
 
 .day-card {
-  height: 86px;
+  height: 96px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 6px;

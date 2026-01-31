@@ -183,7 +183,7 @@ export default function Home() {
   const [calendarMaxHeight, setCalendarMaxHeight] = useState(() => {
     if (typeof window === "undefined") return 440;
     const h = Math.round(window.innerHeight * 0.6);
-    const row = 86;
+    const row = 96;
     const gap = 6;
     const header = 24;
     const rows = Math.max(2, Math.min(6, Math.floor(h / (row + gap))));
@@ -231,7 +231,7 @@ export default function Home() {
   useEffect(() => {
     function onResize() {
       const h = Math.round(window.innerHeight * 0.6);
-      const row = 86;
+      const row = 96;
       const gap = 6;
       const header = 24;
       const rows = Math.max(2, Math.min(6, Math.floor(h / (row + gap))));
@@ -576,8 +576,9 @@ export default function Home() {
                               <div
                                 style={{
                                   fontSize: 11,
-                                  whiteSpace: "normal",
-                                  wordBreak: "break-word",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
                                   flex: 1
                                 }}
                               >
