@@ -527,10 +527,14 @@ export default function CockpitWeek() {
       setShoppingList(j);
       // Prefetch validated recipes so Keep export has content.
       const slots = j?.week?.slots || {};
+      const isSlotValidated = (slot) =>
+        slot?.validated === true ||
+        (slot?.validated == null && (slot?.recipe_id || slot?.free_text));
       const recipeIds = Array.from(
         new Set(
           Object.values(slots)
-            .filter((s) => s?.validated === true && s?.recipe_id)
+            .filter(isSlotValidated)
+            .filter((s) => s?.recipe_id)
             .map((s) => s.recipe_id)
         )
       );
@@ -572,6 +576,11 @@ export default function CockpitWeek() {
     const listData = { ...shoppingList, items: filtered };
     setKeepText(buildKeepShoppingText(listData));
   }, [pantryChecked, keepMode, shoppingList, shoppingOpen]);
+
+  useEffect(() => {
+    if (!shoppingOpen || keepMode !== "recipes" || !shoppingList) return;
+    setKeepText(buildKeepRecipesText(shoppingList));
+  }, [shoppingOpen, keepMode, shoppingList, recipeCache]);
 
   useEffect(() => {
     if (!shoppingOpen || keepMode !== "shopping" || !week?.week_id) return;
@@ -861,27 +870,60 @@ export default function CockpitWeek() {
     const weekId = listData?.week?.week_id || "Semaine";
     const lines = [`RECETTES - ${weekId}`, ""];
     const slots = listData?.week?.slots || {};
-    const recipeIds = Array.from(
-      new Set(
-        Object.values(slots)
-          .filter((s) => s?.validated === true && s?.recipe_id)
-          .map((s) => s.recipe_id)
-      )
-    );
-    if (!recipeIds.length) {
+    const dateStart = listData?.week?.date_start;
+    const dateEnd = listData?.week?.date_end;
+    const slotOrder = activeSlotsFromRange(dateStart, dateEnd);
+    const isSlotValidated = (slot) =>
+      slot?.validated === true ||
+      (slot?.validated == null && (slot?.recipe_id || slot?.free_text));
+    const slotDateLabel = {};
+    if (dateStart && dateEnd) {
+      const start = new Date(`${dateStart}T00:00:00Z`);
+      const end = new Date(`${dateEnd}T00:00:00Z`);
+      for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86400000)) {
+        const prefix = slotPrefixFromDate(d);
+        const label = new Intl.DateTimeFormat("fr-FR", {
+          weekday: "long",
+          day: "numeric",
+          month: "long"
+        }).format(d);
+        slotDateLabel[`${prefix}_lunch`] = label;
+        slotDateLabel[`${prefix}_dinner`] = label;
+      }
+    }
+    const ordered = slotOrder
+      .map((slotKey) => ({ slotKey, slot: slots?.[slotKey] }))
+      .filter(({ slot }) => isSlotValidated(slot));
+    if (!ordered.length) {
       lines.push("AUCUNE RECETTE VALIDEE");
       return toAscii(lines.join("\n"));
     }
-    recipeIds.forEach((rid, idx) => {
-      const recipe = recipeCache?.[rid];
-      const title = toAscii(recipe?.title || rid);
-      lines.push(title);
+    ordered.forEach((entry, idx) => {
+      const slotKey = entry.slotKey;
+      const slot = entry.slot || {};
+      const slotLabel = getSlotLabel(slotKey);
+      const dateLabel = slotDateLabel[slotKey];
+      const header = dateLabel ? `${slotLabel} (${dateLabel})` : slotLabel;
+      lines.push(toAscii(header));
       lines.push("");
-      const desc = toAscii(recipe?.content?.description_courte || "");
+      const generated = slot?.generated_recipe || slot?.preview || null;
+      if (slot?.free_text && !slot?.recipe_id && !generated) {
+        lines.push(toAscii(slot.free_text));
+        if (idx < ordered.length - 1) lines.push("", "-----", "");
+        return;
+      }
+      const recipe = slot?.recipe_id ? recipeCache?.[slot.recipe_id] : null;
+      const content = recipe?.content || generated || {};
+      const title = toAscii(
+        recipe?.title || slot.recipe_id || slot.free_text || ""
+      );
+      if (title) lines.push(title);
+      lines.push("");
+      const desc = toAscii(content?.description_courte || "");
       if (desc) lines.push(desc);
       if (desc) lines.push("");
-      const ingredients = Array.isArray(recipe?.content?.ingredients)
-        ? recipe.content.ingredients
+      const ingredients = Array.isArray(content?.ingredients)
+        ? content.ingredients
         : [];
       if (ingredients.length) {
         lines.push("INGREDIENTS");
@@ -894,8 +936,8 @@ export default function CockpitWeek() {
         });
         lines.push("");
       }
-      const steps = Array.isArray(recipe?.content?.preparation_steps)
-        ? recipe.content.preparation_steps
+      const steps = Array.isArray(content?.preparation_steps)
+        ? content.preparation_steps
         : [];
       if (steps.length) {
         lines.push("ETAPES");
@@ -903,7 +945,7 @@ export default function CockpitWeek() {
           lines.push(`${sidx + 1}. ${toAscii(step)}`);
         });
       }
-      if (idx < recipeIds.length - 1) lines.push("", "-----", "");
+      if (idx < ordered.length - 1) lines.push("", "-----", "");
     });
     return toAscii(lines.join("\n"));
   }
@@ -1656,6 +1698,10 @@ export default function CockpitWeek() {
   // --------------------
   // Render
   // --------------------
+  const isMenuMode = keepMode === "menus";
+  const menuLineCount = isMenuMode && keepText ? keepText.split("\n").length : 0;
+  const menuRows = isMenuMode ? Math.min(36, Math.max(6, menuLineCount)) : undefined;
+
   return (
     <div style={{ display: "flex", gap: 16, padding: 16 }}>
       <aside
@@ -2325,7 +2371,8 @@ export default function CockpitWeek() {
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "min(1100px, 96vw)",
-              height: "80vh",
+              height: isMenuMode ? "auto" : "80vh",
+              maxHeight: "80vh",
               background: "#fff",
               borderRadius: 10,
               padding: 16,
@@ -2395,12 +2442,15 @@ export default function CockpitWeek() {
                   <textarea
                     readOnly
                     value={keepText}
+                    rows={menuRows}
                     style={{
                       width: "100%",
                       fontFamily: "monospace",
                       fontSize: 12,
-                      height: "60%",
-                      flexShrink: 0
+                      flex: isMenuMode ? "none" : 1,
+                      minHeight: 0,
+                      height: isMenuMode ? "auto" : undefined,
+                      resize: isMenuMode ? "none" : undefined
                     }}
                   />
                 ) : null}
