@@ -648,24 +648,7 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
       delete week.slots[slot].generated_recipe_people_signature;
     }
 
-    // Auto-generate ingredients/steps for free-text validated slots (Sprint L)
-    try {
-      const slotData = week.slots[slot];
-      const hasFreeText = !!slotData?.free_text;
-      const hasRecipeId = !!slotData?.recipe_id;
-      const isValidated = slotData?.validated === true;
-      const sig = peopleSignature(slotData?.people);
-      const sigChanged = slotData?.generated_recipe_people_signature !== sig;
-      if (isValidated && hasFreeText && !hasRecipeId) {
-        if (!slotData.generated_recipe || sigChanged) {
-          const preview = await buildPreviewFromTitle(slotData.free_text, slotData.people);
-          slotData.generated_recipe = preview;
-          slotData.generated_recipe_people_signature = sig;
-        }
-      }
-    } catch {
-      // Best effort: validation should still succeed even if AI preview fails.
-    }
+    // Free-text slots are user-forced menus; do not auto-generate recipes.
 
     week.updated_at = nowIso();
     await writeJson(p, week);

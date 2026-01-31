@@ -377,6 +377,13 @@ function removeItemFromTitle(title, itemRaw) {
   return next.replace(/\s*[,;–—-]\s*$/, "").trim();
 }
 
+function inferReplaceSourceFromTitle(title) {
+  const t = String(title || "").trim().toLowerCase();
+  if (!t) return "CHAT_USER";
+  if (t.startsWith("remplace ") || t.startsWith("remplacer ")) return "CHAT_EDIT";
+  return "CHAT_USER";
+}
+
 function detectReplaceProposal(message) {
   const raw = String(message || "").trim();
   if (!raw) return null;
@@ -442,7 +449,8 @@ function detectReplaceProposal(message) {
   }
   if (!title) return null;
 
-  return { slot, title };
+  const source = inferReplaceSourceFromTitle(title);
+  return { slot, title, source };
 }
 
 function stripSansClause(title) {
@@ -1414,6 +1422,9 @@ router.post("/commands/parse", async (req, res) => {
       if (sansItem) {
         title = removeItemFromTitle(title, sansItem);
       }
+      if (!action.source) {
+        action.source = inferReplaceSourceFromTitle(title);
+      }
       summary = `Remplacer ${SLOT_LABELS[slot] || slot} par "${title}"`;
       return res.json({ ok: true, action, summary });
     }
@@ -1520,7 +1531,7 @@ router.post("/commands/apply", async (req, res) => {
           proposal_id: newProposalId(),
           title,
           recipe_id: null,
-          source: "CHAT_USER",
+          source: action?.source ? String(action.source) : "CHAT_USER",
           status: "PROPOSED",
           to_save: false,
           created_at: nowIso()

@@ -1870,6 +1870,14 @@ export default function CockpitWeek() {
             const isSelected = selectedSlot === slot;
             const isValidated = s?.validated === true;
             const hasRecipe = Boolean(s?.recipe_id);
+            const isFreeTextForced = Boolean(
+              s?.free_text &&
+                !s?.recipe_id &&
+                (!s?.source_type ||
+                  s?.source_type === "CHAT_USER" ||
+                  s?.source_type === "USER" ||
+                  s?.source_type === "MANUAL")
+            );
 
             const canFreeText =
               FREE_TEXT_ALLOWED_SLOTS.has(slot) && !isValidated && !hasRecipe;
@@ -1955,70 +1963,76 @@ export default function CockpitWeek() {
                           {validatedLabel(s)}
                         </span>
                       </div>
-                      <IconButton
-                        icon="👁️"
-                        label="Voir"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openRecipeModal(slot);
-                        }}
-                        onMouseEnter={() => {
-                          const rid = s?.recipe_id || null;
-                          const freeText = s?.free_text || null;
-                          const slotPeople = normalizePeopleFromSlot(s?.people);
-                          if (rid) {
-                            prefetchRecipe(rid);
-                          } else if (freeText) {
-                            prefetchFreeTextPreview(freeText, slotPeople);
-                          }
-                        }}
-                        style={{ padding: "4px 6px" }}
-                      />
-                      <IconButton
-                        icon="🔁"
-                        label="Reproposer"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onReproposeValidated(slot);
-                        }}
-                        style={{ padding: "4px 6px" }}
-                      />
-                      {(() => {
-                        const rid = s?.recipe_id || null;
-                        const freeText = s?.free_text || null;
-                        const signature = buildPeopleSignature(normalizePeopleFromSlot(s?.people));
-                        const key = rid
-                          ? buildRecipePrefetchKey(rid)
-                          : freeText
-                            ? buildFreeTextPrefetchKey(freeText, signature)
-                            : null;
-                        const status = key ? prefetchStatus?.[key] : null;
-                        return status ? (
-                          <span style={{ fontSize: 11, opacity: 0.75 }}>
-                            {status === "loading" ? "Préchargement…" : "Préchargé"}
-                          </span>
-                        ) : null;
-                      })()}
-                      {(() => {
-                        const rid = s?.recipe_id || null;
-                        const meta = rid ? recipeCache?.[rid] : null;
-                        const isDrive =
-                          meta?.source?.type === "DRIVE" ||
-                          validatedSourceType === "DRIVE" ||
-                          validatedSourceType === "DRIVE_INDEX";
-                        return !isDrive ? (
+                      {!isFreeTextForced && (
+                        <>
                           <IconButton
-                            icon={saved ? "✅" : "💾"}
-                            label="Sauvegarder"
+                            icon="👁️"
+                            label="Voir"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onSaveValidatedSlot(slot);
+                              openRecipeModal(slot);
                             }}
-                            disabled={saved}
+                            onMouseEnter={() => {
+                              const rid = s?.recipe_id || null;
+                              const freeText = s?.free_text || null;
+                              const slotPeople = normalizePeopleFromSlot(s?.people);
+                              if (rid) {
+                                prefetchRecipe(rid);
+                              } else if (freeText) {
+                                prefetchFreeTextPreview(freeText, slotPeople);
+                              }
+                            }}
                             style={{ padding: "4px 6px" }}
                           />
-                        ) : null;
-                      })()}
+                          <IconButton
+                            icon="🔁"
+                            label="Reproposer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onReproposeValidated(slot);
+                            }}
+                            style={{ padding: "4px 6px" }}
+                          />
+                          {(() => {
+                            const rid = s?.recipe_id || null;
+                            const freeText = s?.free_text || null;
+                            const signature = buildPeopleSignature(
+                              normalizePeopleFromSlot(s?.people)
+                            );
+                            const key = rid
+                              ? buildRecipePrefetchKey(rid)
+                              : freeText
+                                ? buildFreeTextPrefetchKey(freeText, signature)
+                                : null;
+                            const status = key ? prefetchStatus?.[key] : null;
+                            return status ? (
+                              <span style={{ fontSize: 11, opacity: 0.75 }}>
+                                {status === "loading" ? "Préchargement…" : "Préchargé"}
+                              </span>
+                            ) : null;
+                          })()}
+                          {(() => {
+                            const rid = s?.recipe_id || null;
+                            const meta = rid ? recipeCache?.[rid] : null;
+                            const isDrive =
+                              meta?.source?.type === "DRIVE" ||
+                              validatedSourceType === "DRIVE" ||
+                              validatedSourceType === "DRIVE_INDEX";
+                            return !isDrive ? (
+                              <IconButton
+                                icon={saved ? "✅" : "💾"}
+                                label="Sauvegarder"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSaveValidatedSlot(slot);
+                                }}
+                                disabled={saved}
+                                style={{ padding: "4px 6px" }}
+                              />
+                            ) : null;
+                          })()}
+                        </>
+                      )}
                     </div>
                   ) : (
                     <>
