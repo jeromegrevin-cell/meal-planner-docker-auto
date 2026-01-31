@@ -1723,8 +1723,9 @@ export default function CockpitWeek() {
   const menuRows = isMenuMode ? Math.min(36, Math.max(6, menuLineCount)) : undefined;
 
   return (
-    <div className="page" style={{ display: "flex", gap: 16 }}>
+    <div className="page week-layout" style={{ display: "flex", gap: 16 }}>
       <aside
+        className="week-sidebar week-sidebar-left"
         style={{
           width: 260,
           flexShrink: 0,
@@ -1883,14 +1884,14 @@ export default function CockpitWeek() {
       </aside>
 
       <div className="divider-vertical" aria-hidden="true" />
-      <main style={{ flex: 1, minWidth: 0 }}>
+      <main className="week-main" style={{ flex: 1, minWidth: 0 }}>
         {week?.date_start && week?.date_end && (
           <h2 className="toolbar-title" style={{ margin: "0 0 8px 0" }}>
             {formatWeekRangeTitle(week.date_start, week.date_end)}
           </h2>
         )}
 
-        <table style={{ width: "100%", marginTop: 8, borderCollapse: "collapse" }}>
+        <table className="week-table" style={{ width: "100%", marginTop: 8, borderCollapse: "collapse" }}>
         <tbody>
           {tableRows.map(([slot, s]) => {
             const isSelected = selectedSlot === slot;
@@ -1927,13 +1928,14 @@ export default function CockpitWeek() {
             return (
               <tr
                 key={slot}
+                className="week-row"
                 onClick={() => setSelectedSlot(slot)}
                 style={{
                   background: isSelected ? "var(--accent-soft)" : "",
                   borderBottom: "1px solid var(--border)"
                 }}
               >
-                <td style={{ width: 150, verticalAlign: "top", padding: "10px 6px" }}>
+                <td className="week-day-cell" style={{ width: 150, verticalAlign: "top", padding: "10px 6px" }}>
                   <div style={{ fontWeight: 400, fontSize: 15 }}>
                     {getSlotLabel(slot)}
                   </div>
@@ -1980,7 +1982,7 @@ export default function CockpitWeek() {
                   )}
                 </td>
 
-                <td style={{ verticalAlign: "top", padding: "10px 6px 10px 0" }}>
+                <td className="week-content-cell" style={{ verticalAlign: "top", padding: "10px 6px 10px 0" }}>
                   {isValidated ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ fontWeight: 400, fontSize: 15 }}>
@@ -2183,7 +2185,7 @@ export default function CockpitWeek() {
 
       <div className="divider-vertical" aria-hidden="true" />
       <aside
-        className="panel"
+        className="panel week-sidebar week-sidebar-right"
         style={{
           width: 280,
           flexShrink: 0,
@@ -2211,7 +2213,7 @@ export default function CockpitWeek() {
             🧹 Clear chat
           </button>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div className="chat-input-row" style={{ display: "flex", gap: 6 }}>
           <textarea
             rows={4}
             value={chatInput}

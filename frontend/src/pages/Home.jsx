@@ -445,7 +445,7 @@ export default function Home() {
           onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
         />
 
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+        <div className="toolbar-actions" style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button
             onClick={() => navigate("/weeks")}
             className="btn-primary"

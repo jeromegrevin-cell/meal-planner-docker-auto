@@ -127,12 +127,18 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .toolbar-title {
   font-size: 20px;
   font-weight: 600;
   color: var(--ink);
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .btn-primary {
@@ -267,6 +273,104 @@ button:disabled {
 
 .modal-title {
   font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .page {
+    padding: 16px;
+  }
+
+  .app-header {
+    padding: 6px 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 12px;
+  }
+
+  .toolbar-title {
+    width: 100%;
+    order: 2;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+    order: 3;
+  }
+
+  .calendar-shell {
+    padding: 8px;
+  }
+
+  .week-layout {
+    flex-direction: column;
+  }
+
+  .week-sidebar {
+    width: 100% !important;
+    max-height: none !important;
+  }
+
+  .divider-vertical {
+    display: none;
+  }
+
+  .week-table,
+  .week-table tbody,
+  .week-table tr,
+  .week-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .week-row {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px;
+    margin-bottom: 8px;
+    background: var(--bg-elev);
+  }
+
+  .toolbar-title {
+    font-size: 18px;
+  }
+
+  .week-row .btn-side,
+  .week-row button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .week-row button span {
+    font-size: 16px;
+  }
+
+  .week-day-cell,
+  .week-content-cell {
+    padding: 6px 0;
+  }
+
+  .chat-input-row {
+    flex-direction: column;
+  }
+
+  .chat-input-row button {
+    width: 100%;
+  }
+
+  button {
+    min-height: 40px;
+  }
+
+  .modal {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+  }
 }
 
 .status-loading {
