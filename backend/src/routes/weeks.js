@@ -110,6 +110,10 @@ function compareISODate(a, b) {
   return ta - tb;
 }
 
+function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+  return compareISODate(aStart, bEnd) <= 0 && compareISODate(bStart, aEnd) <= 0;
+}
+
 function normalizeIngredientKey(text) {
   return String(text || "")
     .toLowerCase()
@@ -433,10 +437,36 @@ router.post("/prepare", async (req, res) => {
 
     const p = path.join(WEEKS_DIR, `${weekId}.json`);
 
-    // Si existant (même si ancien): renvoyer (comportement identique)
-    const existing = await safeReadJson(p);
-    if (existing) {
-      return res.status(409).json({ error: "week_exists", week: existing });
+    // Garde-fou: refuser toute creation si week_id existe deja.
+    if (fsSync.existsSync(p)) {
+      const existing = await safeReadJson(p);
+      return res.status(409).json({ error: "week_exists", week: existing || null });
+    }
+
+    // Alerte si recouvrement de dates avec une autre semaine.
+    const files = await listWeekFiles();
+    for (const f of files) {
+      const existingPath = path.join(WEEKS_DIR, f);
+      const existingWeek = await safeReadJson(existingPath);
+      if (!existingWeek?.date_start || !existingWeek?.date_end) continue;
+      if (
+        rangesOverlap(
+          dateStart,
+          dateEnd,
+          existingWeek.date_start,
+          existingWeek.date_end
+        )
+      ) {
+        return res.status(409).json({
+          error: "week_overlap",
+          details: `Overlap with ${existingWeek.week_id} (${existingWeek.date_start} to ${existingWeek.date_end})`,
+          overlap: {
+            week_id: existingWeek.week_id,
+            date_start: existingWeek.date_start,
+            date_end: existingWeek.date_end
+          }
+        });
+      }
     }
 
     const activeSlots = activeSlotsFromRange(dateStart, dateEnd);

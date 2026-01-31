@@ -1170,6 +1170,10 @@ export default function CockpitWeek() {
         alert("Semaine déjà existante — revoir les paramètres de création.");
         return null;
       }
+      if (msg.includes("week_overlap")) {
+        alert(`Recouvrement de dates détecté — ${msg}`);
+        return null;
+      }
       alert(`Préparation impossible: ${msg}`);
       return null;
     }
