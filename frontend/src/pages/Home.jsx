@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import IconButton from "../components/IconButton.jsx";
 
 const WEEKDAYS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
@@ -113,7 +113,10 @@ async function fetchJson(url, options = {}) {
 }
 
 function dateKey(d) {
-  return d.toISOString().slice(0, 10);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function addDays(d, n) {
@@ -122,11 +125,22 @@ function addDays(d, n) {
   return x;
 }
 
-function startOfCalendar(monthDate) {
-  const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-  const day = first.getDay(); // 0 Sun ... 6 Sat
+function addMonths(d, n) {
+  return new Date(d.getFullYear(), d.getMonth() + n, 1);
+}
+
+function startOfWeekMonday(dateObj) {
+  const d = new Date(dateObj);
+  const day = d.getDay(); // 0 Sun ... 6 Sat
   const mondayIndex = (day + 6) % 7; // 0 for Monday
-  return addDays(first, -mondayIndex);
+  return addDays(d, -mondayIndex);
+}
+
+function endOfWeekSunday(dateObj) {
+  const d = new Date(dateObj);
+  const day = d.getDay(); // 0 Sun ... 6 Sat
+  const sundayIndex = (7 - day) % 7;
+  return addDays(d, sundayIndex);
 }
 
 function slotPrefixFromDate(d) {
@@ -153,9 +167,11 @@ function totalPeopleFromSlot(slotData) {
 
 export default function Home() {
   const navigate = useNavigate();
+  const todayRef = new Date();
   const [currentMonth, setCurrentMonth] = useState(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    new Date(todayRef.getFullYear(), todayRef.getMonth(), 1)
   );
+  const [selectedDateKey, setSelectedDateKey] = useState(dateKey(todayRef));
   const [weeks, setWeeks] = useState({});
   const [recipeCache, setRecipeCache] = useState({});
   const [modal, setModal] = useState(null); // { title, recipe, dateLabel }
@@ -167,7 +183,11 @@ export default function Home() {
   const [calendarMaxHeight, setCalendarMaxHeight] = useState(() => {
     if (typeof window === "undefined") return 440;
     const h = Math.round(window.innerHeight * 0.6);
-    return Math.max(360, Math.min(560, h));
+    const row = 86;
+    const gap = 6;
+    const header = 24;
+    const rows = Math.max(2, Math.min(6, Math.floor(h / (row + gap))));
+    return rows * (row + gap) - gap + header;
   });
 
   useEffect(() => {
@@ -211,16 +231,35 @@ export default function Home() {
   useEffect(() => {
     function onResize() {
       const h = Math.round(window.innerHeight * 0.6);
-      setCalendarMaxHeight(Math.max(360, Math.min(560, h)));
+      const row = 86;
+      const gap = 6;
+      const header = 24;
+      const rows = Math.max(2, Math.min(6, Math.floor(h / (row + gap))));
+      setCalendarMaxHeight(rows * (row + gap) - gap + header);
     }
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
   const days = useMemo(() => {
-    const start = startOfCalendar(currentMonth);
-    return Array.from({ length: 42 }, (_, i) => addDays(start, i));
+    const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+    const start = startOfWeekMonday(monthStart);
+    const end = endOfWeekSunday(monthEnd);
+    const out = [];
+    for (let d = new Date(start); d <= end; d = addDays(d, 1)) {
+      out.push(new Date(d));
+    }
+    return out;
   }, [currentMonth]);
+
+  const calendarWeeks = useMemo(() => {
+    const out = [];
+    for (let i = 0; i < days.length; i += 7) {
+      out.push(days.slice(i, i + 7));
+    }
+    return out;
+  }, [days]);
 
   const dayMap = useMemo(() => {
     const map = {};
@@ -367,20 +406,43 @@ export default function Home() {
     year: "numeric"
   }).format(currentMonth);
 
+  const calendarRef = useRef(null);
+  const weekRefs = useRef([]);
+  const calendarHeaderHeight = 24;
+  const calendarHeaderGap = 6;
+
+  useEffect(() => {
+    const idx = days.findIndex((d) => dateKey(d) === selectedDateKey);
+    if (idx < 0) return;
+    const weekIdx = Math.floor(idx / 7);
+    const target = weekRefs.current[weekIdx];
+    if (target) {
+      target.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+  }, [days, selectedDateKey]);
+
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={() => setCurrentMonth(new Date())}>Aujourd'hui</button>
+        <button
+          onClick={() => {
+            const now = new Date();
+            setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+            setSelectedDateKey(dateKey(now));
+          }}
+        >
+          Aujourd'hui
+        </button>
         <IconButton
           icon="‹"
           label="Mois précédent"
-          onClick={() => setCurrentMonth(addDays(currentMonth, -30))}
+          onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
         />
         <div style={{ fontSize: 20, fontWeight: 700 }}>{monthLabel}</div>
         <IconButton
           icon="›"
           label="Mois suivant"
-          onClick={() => setCurrentMonth(addDays(currentMonth, 30))}
+          onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
         />
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
@@ -400,111 +462,154 @@ export default function Home() {
         </div>
       </div>
 
-      <div
-        style={{
-          marginTop: 12,
-          maxHeight: calendarMaxHeight,
-          overflowY: "auto",
-          paddingRight: 4
-        }}
-      >
+      <div style={{ marginTop: 12 }}>
         <div
+          ref={calendarRef}
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(7, 1fr)",
-            gap: 6
+            maxHeight: calendarMaxHeight,
+            overflowY: "auto",
+            paddingRight: 4,
+            scrollSnapType: "y mandatory",
+            scrollPaddingTop: calendarHeaderHeight + calendarHeaderGap
           }}
         >
-          {WEEKDAYS_FR.map((d) => (
-            <div key={d} style={{ fontWeight: 700, textAlign: "center", fontSize: 12 }}>
-              {d}
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              background: "#fff",
+              zIndex: 2,
+              paddingBottom: calendarHeaderGap
+            }}
+          >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+              {WEEKDAYS_FR.map((d) => (
+                <div key={d} style={{ fontWeight: 700, textAlign: "center", fontSize: 12 }}>
+                  {d}
+                </div>
+              ))}
             </div>
-          ))}
-
-          {days.map((d) => {
-            const key = dateKey(d);
-            const info = dayMap[key] || null;
-            const isCurrentMonth = d.getMonth() === currentMonth.getMonth();
-            const today = new Date();
-            const isToday = dateKey(d) === dateKey(today);
-            const dayLabel = d.getDate();
-            const dayFull = new Intl.DateTimeFormat("fr-FR", {
-              weekday: "long",
-              day: "2-digit",
-              month: "long",
-              year: "numeric"
-            }).format(d);
-
-            return (
+          </div>
+          <div style={{ display: "grid", gap: 6, paddingTop: calendarHeaderHeight + calendarHeaderGap }}>
+            {calendarWeeks.map((week, widx) => (
               <div
-                key={key}
+                key={`week-${widx}`}
+                ref={(el) => {
+                  weekRefs.current[widx] = el;
+                }}
                 style={{
-                  height: 86,
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 6,
-                  padding: 6,
-                  background: isToday ? "#dceeff" : isCurrentMonth ? "#fff" : "#f9fafb",
-                  overflow: "hidden"
+                  display: "grid",
+                  gridTemplateColumns: "repeat(7, 1fr)",
+                  gap: 6,
+                  scrollSnapAlign: "start",
+                  scrollSnapStop: "always",
+                  scrollMarginTop: calendarHeaderHeight + calendarHeaderGap
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div style={{ fontWeight: 700, fontSize: 12 }}>{dayLabel}</div>
-                  {info?.week_id && (
-                    <div style={{ fontSize: 10, opacity: 0.6 }}>{info.week_id}</div>
-                  )}
-                </div>
-
-                <div style={{ marginTop: 4, display: "grid", gap: 3 }}>
-                  {["lunch", "dinner"].map((k) => {
-                    const slot = info?.[k]?.slot || null;
-                    const data = info?.[k]?.data || null;
-                    const label = SLOT_LABELS[k];
-                    const title = data?.free_text || data?.recipe_id || "";
+                {week.map((d) => {
+                  const key = dateKey(d);
+                  const info = dayMap[key] || null;
+                  const isCurrentMonth = d.getMonth() === currentMonth.getMonth();
+                  const today = new Date();
+                  const isToday = dateKey(d) === dateKey(today);
+                  const isSelected = selectedDateKey === key;
+                  const dayLabel = new Intl.DateTimeFormat("fr-FR", {
+                    weekday: "long",
+                    day: "numeric"
+                  }).format(d);
+                  const dayFull = new Intl.DateTimeFormat("fr-FR", {
+                    weekday: "long",
+                    day: "2-digit",
+                    month: "long",
+                    year: "numeric"
+                  }).format(d);
+                  const dayLabelCap =
+                    dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1);
 
                   return (
                     <div
-                      key={`${key}-${k}`}
+                      key={key}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        padding: "3px 5px",
-                        borderRadius: 5,
-                        background: "#f3f4f6",
-                        cursor: data ? "pointer" : "default"
+                        height: 86,
+                        border: isSelected ? "2px solid #2563eb" : "1px solid #e5e7eb",
+                        borderRadius: 6,
+                        padding: 6,
+                        background: isSelected
+                          ? "#e8f0ff"
+                          : isToday
+                            ? "#dceeff"
+                            : isCurrentMonth
+                              ? "#fff"
+                              : "#f9fafb",
+                        overflow: "hidden"
                       }}
                       onClick={() => {
-                        if (!data) return;
-                        openRecipeModal(dayFull, label, data);
+                        setSelectedDateKey(key);
+                        setCurrentMonth(new Date(d.getFullYear(), d.getMonth(), 1));
                       }}
                     >
-                      <div
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          width: 26,
-                          opacity: 0.7
-                        }}
-                      >
-                        {label}
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <div style={{ fontWeight: 700, fontSize: 12 }}>{dayLabelCap}</div>
+                        {info?.week_id && (
+                          <div style={{ fontSize: 10, opacity: 0.6 }}>{info.week_id}</div>
+                        )}
                       </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          whiteSpace: "normal",
-                          wordBreak: "break-word",
-                          flex: 1
-                        }}
-                      >
-                        {title || "—"}
+
+                      <div style={{ marginTop: 4, display: "grid", gap: 3 }}>
+                        {["lunch", "dinner"].map((k) => {
+                          const slot = info?.[k]?.slot || null;
+                          const data = info?.[k]?.data || null;
+                          const label = SLOT_LABELS[k];
+                          const title = data?.free_text || data?.recipe_id || "";
+
+                          return (
+                            <div
+                              key={`${key}-${k}`}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                padding: "3px 5px",
+                                borderRadius: 5,
+                                background: "#f3f4f6",
+                                cursor: data ? "pointer" : "default"
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!data) return;
+                                openRecipeModal(dayFull, label, data);
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  width: 26,
+                                  opacity: 0.7
+                                }}
+                              >
+                                {label}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  whiteSpace: "normal",
+                                  wordBreak: "break-word",
+                                  flex: 1
+                                }}
+                              >
+                                {title || "—"}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   );
                 })}
-                </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       </div>
 
