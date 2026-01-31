@@ -179,16 +179,32 @@ function buildWeekIdForDates(start, weekIds) {
   return `${year}-W${next}`;
 }
 
-function formatDateFr(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T00:00:00");
-  const s = new Intl.DateTimeFormat("fr-FR", {
+function formatWeekRangeTitle(startStr, endStr) {
+  if (!startStr || !endStr) return "";
+  const start = new Date(`${startStr}T00:00:00`);
+  const end = new Date(`${endStr}T00:00:00`);
+
+  const startDay = new Intl.DateTimeFormat("fr-FR", {
     weekday: "long",
-    day: "2-digit",
-    month: "long",
-    year: "numeric"
-  }).format(d);
-  return s.charAt(0).toUpperCase() + s.slice(1);
+    day: "2-digit"
+  }).format(start);
+  const endDay = new Intl.DateTimeFormat("fr-FR", {
+    weekday: "long",
+    day: "2-digit"
+  }).format(end);
+
+  const startMonth = new Intl.DateTimeFormat("fr-FR", { month: "long" }).format(start);
+  const endMonth = new Intl.DateTimeFormat("fr-FR", { month: "long" }).format(end);
+  const startYear = start.getFullYear();
+  const endYear = end.getFullYear();
+
+  if (startYear === endYear && start.getMonth() === end.getMonth()) {
+    return `Semaine du ${startDay} au ${endDay} ${endMonth} ${endYear}`;
+  }
+  if (startYear === endYear) {
+    return `Semaine du ${startDay} ${startMonth} au ${endDay} ${endMonth} ${endYear}`;
+  }
+  return `Semaine du ${startDay} ${startMonth} ${startYear} au ${endDay} ${endMonth} ${endYear}`;
 }
 
 function normalizePeopleFromSlot(slotPeople) {
@@ -1857,10 +1873,14 @@ export default function CockpitWeek() {
         </section>
       </aside>
 
+      <div
+        aria-hidden="true"
+        style={{ width: 1, background: "var(--border)" }}
+      />
       <main style={{ flex: 1, minWidth: 0 }}>
         {week?.date_start && week?.date_end && (
           <h2 style={{ margin: "0 0 8px 0" }}>
-            Semaine du {formatDateFr(week.date_start)} au {formatDateFr(week.date_end)}
+            {formatWeekRangeTitle(week.date_start, week.date_end)}
           </h2>
         )}
 
@@ -1908,7 +1928,7 @@ export default function CockpitWeek() {
                 }}
               >
                 <td style={{ width: 150, verticalAlign: "top", padding: "10px 6px" }}>
-                  <div style={{ fontWeight: 700 }}>
+                  <div style={{ fontWeight: 400 }}>
                     {getSlotLabel(slot)}
                   </div>
 
@@ -2149,6 +2169,10 @@ export default function CockpitWeek() {
       </table>
       </main>
 
+      <div
+        aria-hidden="true"
+        style={{ width: 1, background: "var(--border)" }}
+      />
       <aside
         style={{
           width: 280,

@@ -1,0 +1,115 @@
+:root {
+  color-scheme: light;
+  --bg: #f7f2ea;
+  --bg-elev: #fffaf3;
+  --ink: #1f2933;
+  --ink-muted: #5f6b76;
+  --border: #d7cfc3;
+  --accent: #5f7489;
+  --accent-strong: #4c6278;
+  --accent-soft: #e4edf4;
+  --shadow: 0 10px 30px rgba(31, 41, 51, 0.08);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font-sans: "Avenir Next", "Avenir", "Gill Sans", "Trebuchet MS", "Segoe UI", sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Palatino", serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--bg) 0%, #f3ede4 100%);
+}
+
+a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-strong);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-sans);
+  color: var(--ink);
+}
+
+button {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  box-shadow: 0 1px 0 rgba(31, 41, 51, 0.05);
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-brand {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 20px;
+  letter-spacing: 0.3px;
+}
+
+.nav-link {
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.nav-link[aria-label="Accueil"] {
+  font-size: 24px;
+}
+
+.nav-link:hover {
+  background: var(--accent-soft);
+}
+
+.avatar-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 14px;
+  color: var(--ink-muted);
+  background: #fff;
+}
