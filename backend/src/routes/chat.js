@@ -11,8 +11,16 @@ const router = express.Router();
 const CHAT_DIR = path.join(DATA_DIR, "chat_sessions");
 const RECIPES_DIR = path.join(DATA_DIR, "recipes");
 const CONSTRAINTS_PATH = path.join(DATA_DIR, "constraints.json");
+const STATIC_CONSTRAINTS_PATH = path.join(
+  PROJECT_ROOT,
+  "frontend",
+  "src",
+  "data",
+  "constraints.json"
+);
 const CHAT_PERSIST = process.env.CHAT_PERSIST !== "0";
 const CHAT_RETENTION_DAYS = Number(process.env.CHAT_RETENTION_DAYS || 0);
+const HISTORY_WEEKS_LIMIT = Number(process.env.MEAL_PLANNER_HISTORY_WEEKS || 8);
 
 // ---------- OpenAI lazy client ----------
 let cachedClient = null;
@@ -55,6 +63,9 @@ function getModel() {
 }
 
 // ---------- Utils ----------
+let cachedStaticConstraints = null;
+let cachedStaticConstraintsMtime = 0;
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -73,6 +84,67 @@ async function readConstraints() {
   } catch {
     return { global: [], weeks: {} };
   }
+}
+
+function normalizeStaticConstraints(raw) {
+  const sections = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.sections)
+      ? raw.sections
+      : [];
+  return sections
+    .map((section) => {
+      const title = String(section?.title || "").trim();
+      const items = Array.isArray(section?.items)
+        ? section.items.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+      return { title, items };
+    })
+    .filter((section) => section.title || section.items.length);
+}
+
+function loadStaticConstraintsSections() {
+  try {
+    if (!STATIC_CONSTRAINTS_PATH) return [];
+    const stat = fsSync.statSync(STATIC_CONSTRAINTS_PATH);
+    if (cachedStaticConstraints && stat.mtimeMs === cachedStaticConstraintsMtime) {
+      return cachedStaticConstraints;
+    }
+    const raw = fsSync.readFileSync(STATIC_CONSTRAINTS_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeStaticConstraints(parsed);
+    cachedStaticConstraints = normalized;
+    cachedStaticConstraintsMtime = stat.mtimeMs;
+    return normalized;
+  } catch {
+    return [];
+  }
+}
+
+function buildStaticConstraintsPromptLines() {
+  const sections = loadStaticConstraintsSections();
+  if (!sections.length) return [];
+  const lines = ["Contraintes Accueil (système):"];
+  for (const section of sections) {
+    const title = section.title ? `${section.title}: ` : "";
+    const body = section.items.length ? section.items.join(" | ") : "";
+    const text = `${title}${body}`.trim();
+    if (text) lines.push(`- ${text}`);
+  }
+  return lines;
+}
+
+function buildStaticConstraintsReplyLines() {
+  const sections = loadStaticConstraintsSections();
+  if (!sections.length) return [];
+  const lines = ["- Contraintes Accueil (système):"];
+  for (const section of sections) {
+    const title = section.title ? `${section.title}: ` : "";
+    const body = section.items.length ? section.items.join(" | ") : "";
+    const text = `${title}${body}`.trim();
+    if (text) lines.push(`- ${text}`);
+  }
+  return lines;
 }
 
 async function writeConstraints(next) {
@@ -209,6 +281,127 @@ function normalizePlain(text) {
     .trim();
 }
 
+const MAIN_INGREDIENT_PATTERNS = [
+  { key: "poulet", label: "poulet", terms: ["poulet", "volaille"] },
+  { key: "dinde", label: "dinde", terms: ["dinde"] },
+  { key: "boeuf", label: "boeuf", terms: ["boeuf", "bœuf", "steak", "hach", "entrecote"] },
+  { key: "porc", label: "porc", terms: ["porc", "jambon", "lard", "bacon", "saucisse", "chorizo"] },
+  { key: "agneau", label: "agneau", terms: ["agneau", "mouton"] },
+  {
+    key: "poisson",
+    label: "poisson",
+    terms: ["saumon", "cabillaud", "thon", "truite", "colin", "lieu", "merlu", "dorade", "bar", "sole", "maquereau", "sardine", "poisson"]
+  },
+  {
+    key: "fruits_de_mer",
+    label: "fruits de mer",
+    terms: ["crevette", "moule", "calamar", "seiche", "poulpe", "crabe", "langoustine"]
+  },
+  { key: "oeufs", label: "oeufs", terms: ["oeuf", "œuf", "omelette", "frittata"] },
+  { key: "tofu", label: "tofu", terms: ["tofu", "tempeh"] },
+  {
+    key: "legumineuses",
+    label: "legumineuses",
+    terms: ["lentille", "pois chiche", "haricot", "pois casse", "pois cass"]
+  },
+  {
+    key: "fromage",
+    label: "fromage",
+    terms: ["raclette", "fromage", "mozzarella", "chevre", "chèvre", "feta", "comte", "comté", "emmental", "gruyere", "gruyère", "parmesan"]
+  }
+];
+
+function mainIngredientKeyFromTitle(title) {
+  const msg = normalizePlain(title);
+  if (!msg) return "";
+  for (const group of MAIN_INGREDIENT_PATTERNS) {
+    for (const term of group.terms) {
+      const t = normalizePlain(term);
+      if (t && msg.includes(t)) return group.key;
+    }
+  }
+  return "";
+}
+
+function mainIngredientLabel(key) {
+  if (!key) return "";
+  const found = MAIN_INGREDIENT_PATTERNS.find((g) => g.key === key);
+  return found ? found.label : key;
+}
+
+async function listWeekFiles() {
+  try {
+    const files = await fs.readdir(path.join(DATA_DIR, "weeks"));
+    return files.filter((f) => f.endsWith(".json"));
+  } catch {
+    return [];
+  }
+}
+
+async function readRecipeTitleById(recipeId, cache) {
+  if (!recipeId) return "";
+  if (cache.has(recipeId)) return cache.get(recipeId) || "";
+  const p = path.join(RECIPES_DIR, `${recipeId}.json`);
+  try {
+    const data = await readJson(p);
+    const title = String(data?.title || "").trim();
+    cache.set(recipeId, title);
+    return title;
+  } catch {
+    cache.set(recipeId, "");
+    return "";
+  }
+}
+
+async function collectWeekSlotTitles(weekData, recipeCache) {
+  const titles = [];
+  const slots = weekData?.slots || {};
+  for (const slot of Object.keys(slots)) {
+    const slotData = slots[slot] || {};
+    const free = String(slotData?.free_text || "").trim();
+    if (free) {
+      titles.push(free);
+      continue;
+    }
+    const recipeId = String(slotData?.recipe_id || "").trim();
+    if (recipeId) {
+      const t = await readRecipeTitleById(recipeId, recipeCache);
+      if (t) titles.push(t);
+    }
+  }
+  return titles;
+}
+
+async function collectHistoricalIngredientKeys(currentWeekId, limit) {
+  const files = await listWeekFiles();
+  const recipeCache = new Map();
+  const weeks = [];
+  for (const f of files) {
+    const weekId = f.replace(/\.json$/i, "");
+    if (!weekId || weekId === currentWeekId) continue;
+    try {
+      const data = await readJson(path.join(DATA_DIR, "weeks", f));
+      const dateEnd = String(data?.date_end || "");
+      const ts = Date.parse(dateEnd ? `${dateEnd}T00:00:00Z` : "");
+      weeks.push({ weekId, ts, data });
+    } catch {
+      // ignore unreadable week
+    }
+  }
+  weeks.sort((a, b) => (Number.isFinite(b.ts) ? b.ts : 0) - (Number.isFinite(a.ts) ? a.ts : 0));
+  const sliced = limit > 0 ? weeks.slice(0, limit) : weeks;
+
+  const used = new Set();
+  for (const w of sliced) {
+    const titles = await collectWeekSlotTitles(w.data, recipeCache);
+    for (const t of titles) {
+      const key = mainIngredientKeyFromTitle(t);
+      if (key) used.add(key);
+    }
+  }
+  return used;
+}
+
 function titleKey(title) {
   const base = normalizeKey(title);
   if (!base) return "";
@@ -280,6 +473,68 @@ function detectCancelSlot(message) {
 
   // ambiguous meal -> ask clarification
   return null;
+}
+
+function detectListConstraints(message) {
+  const msg = normalizePlain(message);
+  if (!msg) return false;
+  const keywords = [
+    "contraintes",
+    "contrainte",
+    "liste des contraintes",
+    "rappel contraintes",
+    "rappelle les contraintes",
+    "rappelle moi les contraintes",
+    "mes contraintes",
+    "quelles contraintes"
+  ];
+  return keywords.some((k) => msg.includes(normalizePlain(k)));
+}
+
+function formatConstraintsReply(weekId, weekData, constraints) {
+  const globalList = Array.isArray(constraints?.global) ? constraints.global : [];
+  const weekList = Array.isArray(constraints?.weeks?.[weekId])
+    ? constraints.weeks[weekId]
+    : [];
+
+  const lines = [];
+  lines.push("Contraintes enregistrées:");
+  lines.push(
+    `- Permanentes: ${globalList.length ? globalList.join(" | ") : "aucune"}`
+  );
+  lines.push(
+    `- Semaine ${weekId}: ${weekList.length ? weekList.join(" | ") : "aucune"}`
+  );
+
+  const rules = weekData?.rules_readonly || {};
+  const noLunchSlots = Array.isArray(rules.no_lunch_slots) ? rules.no_lunch_slots : [];
+  if (noLunchSlots.length) {
+    const labels = noLunchSlots.map((s) => SLOT_LABELS[s] || s).join(", ");
+    lines.push(`- Règles semaine (système): pas de déjeuner pour ${labels}`);
+  }
+  if (Number.isFinite(rules.main_ingredient_max_per_week)) {
+    lines.push(
+      `- Règles semaine (système): ingrédient principal max ${rules.main_ingredient_max_per_week} fois/semaine`
+    );
+  }
+  if (Number.isFinite(rules.min_days_between_repeat)) {
+    lines.push(
+      `- Règles semaine (système): ${rules.min_days_between_repeat} jours mini entre répétitions`
+    );
+  }
+  if (rules.people) {
+    const adults = Number.isFinite(rules.people?.adults) ? rules.people.adults : 0;
+    const children = Number.isFinite(rules.people?.children) ? rules.people.children : 0;
+    lines.push(`- Règles semaine (système): ${adults} adulte(s), ${children} enfant(s)`);
+  }
+
+  const staticLines = buildStaticConstraintsReplyLines();
+  if (staticLines.length) {
+    lines.push(...staticLines);
+  }
+
+  lines.push("Si une proposition ne respecte pas ces contraintes, dis-moi laquelle.");
+  return lines.join("\n");
 }
 
 function detectMoveProposal(message) {
@@ -462,7 +717,13 @@ function stripSansClause(title) {
   return cleaned;
 }
 
-function parseProposalLines(lines, slots, existingTitles = null, existingKeys = null) {
+function parseProposalLines(
+  lines,
+  slots,
+  existingTitles = null,
+  existingKeys = null,
+  opts = {}
+) {
   const slotSet = new Set(slots);
   const titles = new Set();
   const keys = new Set();
@@ -482,9 +743,12 @@ function parseProposalLines(lines, slots, existingTitles = null, existingKeys = 
     if (tKey && keys.has(tKey)) continue;
     if (existingTitles && existingTitles.has(key)) continue;
     if (existingKeys && tKey && existingKeys.has(tKey)) continue;
+    const ingKey = opts.ingredientKeyFn ? opts.ingredientKeyFn(title) : "";
+    if (opts.isIngredientAllowed && ingKey && !opts.isIngredientAllowed(ingKey)) continue;
     map.set(slot, title);
     titles.add(key);
     if (tKey) keys.add(tKey);
+    if (ingKey && opts.onIngredientUsed) opts.onIngredientUsed(ingKey);
   }
 
   return { map, titles, keys };
@@ -698,10 +962,14 @@ router.post("/current", async (req, res) => {
 
     if (openai) {
       try {
+        const systemLines = [
+          "Tu es l'assistant du cockpit menus.",
+          ...buildStaticConstraintsPromptLines(),
+          "Reponds en francais, court, actionnable."
+        ];
         const system = {
           role: "system",
-          content:
-            "Tu es l'assistant du cockpit menus. Reponds en francais, court, actionnable."
+          content: systemLines.filter(Boolean).join("\n")
         };
 
         const history = data.messages
@@ -886,6 +1154,58 @@ router.post("/proposals/generate", async (req, res) => {
           )}`
         : null;
 
+    const historyIngredientKeys = await collectHistoricalIngredientKeys(
+      weekId,
+      Number.isFinite(HISTORY_WEEKS_LIMIT) ? HISTORY_WEEKS_LIMIT : 0
+    );
+    const maxIngredientPerWeek = Number(
+      weekData?.rules_readonly?.main_ingredient_max_per_week || 2
+    );
+    const ingredientCounts = new Map();
+    const ingredientDisallowed = new Set(historyIngredientKeys);
+
+    const markIngredientUsed = (key) => {
+      if (!key) return;
+      ingredientCounts.set(key, (ingredientCounts.get(key) || 0) + 1);
+    };
+    const isIngredientAllowed = (key) => {
+      if (!key) return true;
+      if (ingredientDisallowed.has(key)) return false;
+      const count = ingredientCounts.get(key) || 0;
+      return count < maxIngredientPerWeek;
+    };
+
+    const recipeCache = new Map();
+    const currentWeekTitles = await collectWeekSlotTitles(weekData, recipeCache);
+    for (const t of currentWeekTitles) {
+      const k = mainIngredientKeyFromTitle(t);
+      if (k) markIngredientUsed(k);
+    }
+
+    for (const [slot, listRaw] of Object.entries(nextData.menu_proposals || {})) {
+      if (overwrite && slotsSet.has(slot)) continue;
+      const list = Array.isArray(listRaw) ? listRaw : [];
+      const firstTitle = String(list?.[0]?.title || "").trim();
+      if (!firstTitle) continue;
+      const k = mainIngredientKeyFromTitle(firstTitle);
+      if (!k) continue;
+      markIngredientUsed(k);
+    }
+
+    const avoidIngredients = Array.from(
+      new Set([
+        ...Array.from(ingredientDisallowed.values()),
+        ...Array.from(ingredientCounts.keys())
+      ])
+    );
+    const avoidIngredientLine =
+      avoidIngredients.length > 0
+        ? `Évite de proposer des plats avec ces ingrédients principaux (déjà utilisés cette semaine ou récemment): ${avoidIngredients
+            .slice(0, 12)
+            .map((k) => mainIngredientLabel(k))
+            .join(", ")}`
+        : null;
+
     let rawText = "";
     let lines = [];
     let parsedMap = null;
@@ -913,6 +1233,8 @@ router.post("/proposals/generate", async (req, res) => {
       driveTitles.filter((t) => {
         const key = t.toLowerCase();
         const tKey = titleKey(t);
+        const iKey = mainIngredientKeyFromTitle(t);
+        if (iKey && !isIngredientAllowed(iKey)) return false;
         return key && !usedTitlesForUniq.has(key) && (!tKey || !usedKeysForUniq.has(tKey));
       })
     );
@@ -938,11 +1260,14 @@ router.post("/proposals/generate", async (req, res) => {
         const title = driveCandidates.shift();
         const key = title.toLowerCase();
         const tKey = titleKey(title);
+        const iKey = mainIngredientKeyFromTitle(title);
+        if (iKey && !isIngredientAllowed(iKey)) continue;
         if (usedTitlesForUniq.has(key)) continue;
         if (tKey && usedKeysForUniq.has(tKey)) continue;
         driveMap.set(slot, title);
         usedTitlesForUniq.add(key);
         if (tKey) usedKeysForUniq.add(tKey);
+        if (iKey) markIngredientUsed(iKey);
         sourceBySlot[slot] = "DRIVE_INDEX";
       }
       if (driveMap.size > 0) {
@@ -968,6 +1293,7 @@ router.post("/proposals/generate", async (req, res) => {
             globalConstraints.length || weekConstraints.length
               ? `Contraintes utilisateur: ${[...globalConstraints, ...weekConstraints].join(" | ")}`
               : "Contraintes utilisateur: aucune.";
+          const staticConstraintsLines = buildStaticConstraintsPromptLines();
           const assumptions =
             "Contexte: France (hémisphère Nord). Date de référence: 25 janvier 2026.";
           const resp = await openai.responses.create({
@@ -978,18 +1304,15 @@ router.post("/proposals/generate", async (req, res) => {
               "1) Format: une ligne par slot, format strict: '- slot: <titre>'.",
               "2) Aucune recette/ingrédient/liste de courses avant validation du tableau.",
               "3) Si ambiguïté/information manquante: fais une hypothèse raisonnable et continue.",
-              "4) Personnes: 2 adultes + 1 enfant de 9 ans (adapter les portions, pas un x3 aveugle).",
-              "5) Nutrition: ~500 kcal/adulte, pas de menu vide.",
-              "6) Saison: légumes de saison, courgette interdite hors saison.",
-              "7) Équivalences cru/cuit: pâtes x2,5 ; riz x3 ; semoule x2 ; légumineuses x3 ; pommes de terre x1 ; patate douce x1.",
-              "8) Répétitions: ingrédient principal max 2 fois/semaine, si 2 fois -> 2 jours d’écart.",
-              "9) Sources: mixer recettes générées + Drive si possible; demander rescan si index Drive non à jour.",
+              "4) Respecter les contraintes Accueil (ci-dessous).",
+              ...staticConstraintsLines,
               constraintLine,
               assumptions,
               "Donne un menu au format strict suivant (une ligne par slot):",
               ...remainingSlots.map((s) => `- ${s}: <titre>`),
               ...avoidLines,
               ...(avoidGlobalLine ? [avoidGlobalLine] : []),
+              ...(avoidIngredientLine ? [avoidIngredientLine] : []),
               "Aucun texte en plus."
             ].join("\n")
           });
@@ -1001,12 +1324,12 @@ router.post("/proposals/generate", async (req, res) => {
             continue;
           }
           lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
-          const parsed = parseProposalLines(
-            lines,
-            remainingSlots,
-            usedTitlesForUniq,
-            usedKeysForUniq
-          );
+          const countsSnapshot = new Map(ingredientCounts);
+          const parsed = parseProposalLines(lines, remainingSlots, usedTitlesForUniq, usedKeysForUniq, {
+            ingredientKeyFn: mainIngredientKeyFromTitle,
+            isIngredientAllowed,
+            onIngredientUsed: markIngredientUsed
+          });
           if (parsed.map.size === remainingSlots.length) {
             parsedMap = parsedMap || new Map();
             for (const [slot, title] of parsed.map.entries()) {
@@ -1017,6 +1340,10 @@ router.post("/proposals/generate", async (req, res) => {
               if (tKey) usedKeysForUniq.add(tKey);
             }
             break;
+          }
+          ingredientCounts.clear();
+          for (const [k, v] of countsSnapshot.entries()) {
+            ingredientCounts.set(k, v);
           }
           rawText = "";
           lines = [];
@@ -1059,6 +1386,8 @@ router.post("/proposals/generate", async (req, res) => {
 
       const titleLower = title.toLowerCase();
       const tKey = titleKey(title);
+      const iKey = mainIngredientKeyFromTitle(title);
+      if (iKey && !isIngredientAllowed(iKey)) continue;
       if (usedTitles.has(titleLower)) continue;
       if (tKey && usedTitleKeys.has(tKey)) continue;
 
@@ -1332,6 +1661,12 @@ router.post("/commands/parse", async (req, res) => {
       });
     }
 
+    if (detectListConstraints(message)) {
+      const constraints = await readConstraints();
+      const summary = formatConstraintsReply(weekId, weekData, constraints);
+      return res.json({ ok: true, action: null, summary });
+    }
+
     const replaceAction = detectReplaceProposal(message);
     if (replaceAction) {
       return res.json({
@@ -1393,6 +1728,7 @@ router.post("/commands/parse", async (req, res) => {
       "- constraint requis pour add/remove constraint.",
       "- message requis pour chat_reply.",
       "- recipe_title requis pour chat_recipe.",
+      ...buildStaticConstraintsPromptLines(),
       `Demande utilisateur: "${message}"`
     ].join("\n");
 
