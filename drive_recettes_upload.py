@@ -64,7 +64,10 @@ def resolve_folder_id(drive):
     resp = drive.files().list(
         q="name = 'Recettes' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         fields="files(id, name)",
-        pageSize=10
+        pageSize=10,
+        corpora="allDrives",
+        includeItemsFromAllDrives=True,
+        supportsAllDrives=True
     ).execute()
     files = resp.get("files", [])
     if not files:
@@ -88,7 +91,9 @@ def find_existing(drive, folder_id: str, filename: str):
     resp = drive.files().list(
         q=f"'{folder_id}' in parents and name = '{filename}' and trashed = false",
         fields="files(id, name, webViewLink)",
-        pageSize=1
+        pageSize=1,
+        includeItemsFromAllDrives=True,
+        supportsAllDrives=True
     ).execute()
     files = resp.get("files", [])
     return files[0] if files else None
@@ -106,29 +111,46 @@ def main():
         return 2
 
     oauth_client = resolve_oauth_client_file()
+    service_account_key = resolve_service_account_key()
     token_path = resolve_oauth_token_file()
     scopes = ["https://www.googleapis.com/auth/drive.file"]
     creds = None
 
+    # Prefer OAuth when available (user consented account has storage quota)
     if oauth_client:
+        oauth_port = int(os.environ.get("DRIVE_OAUTH_PORT", "51763"))
         if os.path.exists(token_path):
             creds = Credentials.from_authorized_user_file(token_path, scopes=scopes)
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+                try:
+                    creds.refresh(Request())
+                except Exception:
+                    # Refresh token invalid/revoked -> force re-consent
+                    try:
+                        Path(token_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    creds = None
+            if not creds or not creds.valid:
                 flow = InstalledAppFlow.from_client_secrets_file(oauth_client, scopes=scopes)
+                flow.redirect_uri = f"http://localhost:{oauth_port}/"
                 try:
                     buf = io.StringIO()
                     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-                        creds = flow.run_local_server(port=0, prompt="consent")
+                        creds = flow.run_local_server(
+                            host="0.0.0.0",
+                            port=oauth_port,
+                            prompt="consent"
+                        )
                 except Exception:
                     auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
                     print(json.dumps({"ok": False, "error": "oauth_authorization_required", "auth_url": auth_url}))
                     return 5
-            Path(token_path).write_text(creds.to_json(), encoding="utf-8")
+            if isinstance(creds, Credentials):
+                Path(token_path).write_text(creds.to_json(), encoding="utf-8")
     else:
-        key_path = resolve_service_account_key()
+        key_path = service_account_key
         if not key_path:
             print(json.dumps({"ok": False, "error": "missing_oauth_client"}))
             return 3
@@ -164,7 +186,8 @@ def main():
     created = drive.files().create(
         body=file_meta,
         media_body=media,
-        fields="id, name, webViewLink"
+        fields="id, name, webViewLink",
+        supportsAllDrives=True
     ).execute()
 
     print(json.dumps({

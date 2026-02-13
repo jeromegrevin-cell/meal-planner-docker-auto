@@ -15,9 +15,12 @@ services:
       - MEAL_PLANNER_API_KEY=${MEAL_PLANNER_API_KEY}
       - MEAL_PLANNER_API_PROTECT_ALL=${MEAL_PLANNER_API_PROTECT_ALL:-1}
       - MEAL_PLANNER_PDFS_PUBLIC=${MEAL_PLANNER_PDFS_PUBLIC:-0}
+      - MEAL_PLANNER_HISTORY_WEEKS=${MEAL_PLANNER_HISTORY_WEEKS:-4}
+      - DRIVE_OAUTH_PORT=${DRIVE_OAUTH_PORT:-51763}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5174,http://127.0.0.1:5174}
     ports:
       - "3002:3002"
+      - "51763:51763"
     volumes:
       - ./backend:/usr/src/app
       - /usr/src/app/node_modules

@@ -238,6 +238,17 @@ async function uploadPdfToDrive({ title, pdfPath }) {
     child.on("close", (code) => {
       const out = stdout.trim();
       if (code !== 0) {
+        let payload = null;
+        try {
+          payload = JSON.parse(out);
+        } catch (_e) {
+          payload = null;
+        }
+        if (payload?.error === "oauth_authorization_required" && payload?.auth_url) {
+          return reject(
+            new Error(`oauth_authorization_required:${payload.auth_url}`)
+          );
+        }
         return reject(
           new Error(`drive_upload_failed:${stderr || out || `exit_code:${code}`}`)
         );

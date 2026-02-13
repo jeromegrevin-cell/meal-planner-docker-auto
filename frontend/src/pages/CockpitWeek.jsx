@@ -136,6 +136,16 @@ async function fetchJson(url, options = {}) {
   return j;
 }
 
+function maybeOpenOauth(message) {
+  const prefix = "oauth_authorization_required:";
+  const msg = String(message || "");
+  if (!msg.startsWith(prefix)) return false;
+  const url = msg.slice(prefix.length).trim();
+  if (!url) return false;
+  window.open(url, "_blank", "noopener");
+  return true;
+}
+
 function buildOtherProposalPrompt(slot, people, childAges) {
   const label = getSlotLabel(slot);
   const adults = people?.adults ?? DEFAULT_PEOPLE.adults;
@@ -1400,7 +1410,15 @@ export default function CockpitWeek() {
           okCount += 1;
           setUploadedRecipeIdsBySlot((prev) => ({ ...prev, [slot]: true }));
         } catch (e) {
-          errors.push({ slot, error: e.message || String(e) });
+          const msg = e.message || String(e);
+          if (maybeOpenOauth(msg)) {
+            errors.push({
+              slot,
+              error: "Autorisation Google requise. Fenêtre ouverte."
+            });
+            continue;
+          }
+          errors.push({ slot, error: msg });
         }
       }
       if (errors.length) {
@@ -1410,7 +1428,12 @@ export default function CockpitWeek() {
         alert(`Upload terminé (${okCount} recette(s)). Pense à lancer un rescan.`);
       }
     } catch (e) {
-      alert(`Upload failed: ${e.message}`);
+      const msg = e.message || String(e);
+      if (maybeOpenOauth(msg)) {
+        alert("Autorisation Google requise. Une fenêtre s'est ouverte.");
+      } else {
+        alert(`Upload failed: ${msg}`);
+      }
     } finally {
       setUploadingWeek(false);
     }
