@@ -355,6 +355,8 @@ export default function CockpitWeek() {
   const pantrySaveTimer = useRef(null);
   const [keepMode, setKeepMode] = useState("shopping");
   const [keepText, setKeepText] = useState("");
+  const [dragOverSlot, setDragOverSlot] = useState(null);
+  const dragFromSlotRef = useRef(null);
 
   // Validated recipe modal
   const [recipeModal, setRecipeModal] = useState(null); // { slot }
@@ -532,6 +534,31 @@ export default function CockpitWeek() {
             : m
         )
       );
+    }
+  }
+
+  async function moveSlot(fromSlot, toSlot) {
+    if (!week?.week_id) return;
+    if (!fromSlot || !toSlot || fromSlot === toSlot) return;
+    try {
+      const j = await fetchJson("/api/chat/commands/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          week_id: week.week_id,
+          action: { action_type: "move_slot", from_slot: fromSlot, to_slot: toSlot }
+        })
+      });
+      if (j?.week) {
+        setWeek(j.week);
+      }
+      if (j?.menu_proposals) {
+        setMenuProposals((prev) => ({ ...prev, ...j.menu_proposals }));
+      } else {
+        await loadMenuProposals(week.week_id);
+      }
+    } catch (e) {
+      alert(`Déplacement impossible: ${e.message}`);
     }
   }
 
@@ -1973,6 +2000,9 @@ export default function CockpitWeek() {
             const isSelected = selectedSlot === slot;
             const isValidated = s?.validated === true;
             const hasRecipe = Boolean(s?.recipe_id);
+            const canDrag =
+              isValidated &&
+              (s?.recipe_id || (s?.free_text && String(s?.free_text || "").trim()));
             const isFreeTextForced = Boolean(
               s?.free_text &&
                 !s?.recipe_id &&
@@ -2006,14 +2036,55 @@ export default function CockpitWeek() {
                 key={slot}
                 className="week-row"
                 onClick={() => setSelectedSlot(slot)}
+                onDragOver={(e) => {
+                  if (!dragFromSlotRef.current) return;
+                  e.preventDefault();
+                  setDragOverSlot(slot);
+                }}
+                onDragLeave={() => {
+                  if (dragOverSlot === slot) setDragOverSlot(null);
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  const from = dragFromSlotRef.current;
+                  dragFromSlotRef.current = null;
+                  setDragOverSlot(null);
+                  if (!from || from === slot) return;
+                  const ok = window.confirm(
+                    `Déplacer ${getSlotLabel(from)} vers ${getSlotLabel(slot)} ?`
+                  );
+                  if (!ok) return;
+                  await moveSlot(from, slot);
+                }}
                 style={{
                   background: isSelected ? "var(--accent-soft)" : "",
-                  borderBottom: "1px solid var(--border)"
+                  borderBottom: "1px solid var(--border)",
+                  outline: dragOverSlot === slot ? "2px dashed var(--accent)" : ""
                 }}
               >
                 <td className="week-day-cell" style={{ width: 150, verticalAlign: "top", padding: "10px 6px" }}>
-                  <div style={{ fontWeight: 400, fontSize: 15 }}>
-                    {getSlotLabel(slot)}
+                  <div style={{ fontWeight: 400, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
+                    {canDrag ? (
+                      <span
+                        draggable
+                        onDragStart={(e) => {
+                          dragFromSlotRef.current = slot;
+                          try {
+                            e.dataTransfer.setData("text/plain", slot);
+                            e.dataTransfer.effectAllowed = "move";
+                          } catch (_e) {}
+                        }}
+                        onDragEnd={() => {
+                          dragFromSlotRef.current = null;
+                          setDragOverSlot(null);
+                        }}
+                        title="Glisser pour déplacer"
+                        style={{ cursor: "grab", userSelect: "none" }}
+                      >
+                        ⠿
+                      </span>
+                    ) : null}
+                    <span>{getSlotLabel(slot)}</span>
                   </div>
 
                   {!isValidated &&
