@@ -1348,7 +1348,11 @@ router.post("/proposals/generate", async (req, res) => {
           rawText = "";
           lines = [];
         }
-      } catch (_e) {
+      } catch (e) {
+        console.warn("[proposals/generate] openai error", {
+          weekId,
+          message: e?.message || String(e)
+        });
         openaiAvailable = false;
         openai = null;
         sourceType = "CHAT_GENERATED";
@@ -1357,7 +1361,44 @@ router.post("/proposals/generate", async (req, res) => {
       }
     }
 
+    const takeDriveCandidate = () => {
+      while (driveCandidates.length > 0) {
+        const title = driveCandidates.shift();
+        if (!title) continue;
+        const key = title.toLowerCase();
+        const tKey = titleKey(title);
+        if (usedTitlesForUniq.has(key)) continue;
+        if (tKey && usedKeysForUniq.has(tKey)) continue;
+        const iKey = mainIngredientKeyFromTitle(title);
+        if (iKey && !isIngredientAllowed(iKey)) continue;
+        return { title, key, tKey, iKey };
+      }
+      return null;
+    };
+
     if (!openaiAvailable || !parsedMap || parsedMap.size !== filteredSlots.length) {
+      // Fallback: fill remaining slots from Drive if AI fails or output is incomplete.
+      parsedMap = parsedMap || new Map();
+      const missingSlots = filteredSlots.filter((s) => !parsedMap.has(s));
+      for (const slot of missingSlots) {
+        const picked = takeDriveCandidate();
+        if (!picked) break;
+        parsedMap.set(slot, picked.title);
+        sourceBySlot[slot] = "DRIVE_INDEX";
+        usedTitlesForUniq.add(picked.key);
+        if (picked.tKey) usedKeysForUniq.add(picked.tKey);
+        if (picked.iKey) markIngredientUsed(picked.iKey);
+      }
+    }
+
+    if (!parsedMap || parsedMap.size !== filteredSlots.length) {
+      if (rawText) {
+        console.warn("[proposals/generate] ai_generate_failed", {
+          weekId,
+          slots: filteredSlots,
+          raw_text_preview: String(rawText).slice(0, 1200)
+        });
+      }
       return res.status(500).json({ error: "ai_generate_failed", raw_text: rawText });
     }
 
@@ -1426,6 +1467,24 @@ router.post("/proposals/generate", async (req, res) => {
     const aiCount = filteredSlots.filter((s) => sourceBySlot[s] === "CHAT_GENERATED").length;
     const driveCount = filteredSlots.filter((s) => sourceBySlot[s] === "DRIVE_INDEX").length;
     if (aiCount < minAI) {
+      if (rawText) {
+        console.warn("[proposals/generate] ai_ratio_too_low", {
+          weekId,
+          aiCount,
+          driveCount,
+          minAI,
+          maxAI,
+          raw_text_preview: String(rawText).slice(0, 1200)
+        });
+      } else {
+        console.warn("[proposals/generate] ai_ratio_too_low", {
+          weekId,
+          aiCount,
+          driveCount,
+          minAI,
+          maxAI
+        });
+      }
       return res.status(409).json({
         error: "ai_ratio_too_low",
         details: { aiCount, driveCount, minAI, maxAI }
