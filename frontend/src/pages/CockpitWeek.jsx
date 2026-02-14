@@ -1797,6 +1797,16 @@ export default function CockpitWeek() {
           return;
         }
 
+        if (slotData?.generated_recipe) {
+          setRecipeModalData({ title: freeText, content: slotData.generated_recipe });
+          setPreviewCache((prev) => ({
+            ...prev,
+            [cacheKey]: { content: slotData.generated_recipe }
+          }));
+          setRecipeModalLoading(false);
+          return;
+        }
+
         setRecipeModalData({ title: freeText });
         const j = await fetchJson("/api/chat/preview-title", {
           method: "POST",
@@ -2013,6 +2023,11 @@ export default function CockpitWeek() {
             const isSelected = selectedSlot === slot;
             const isValidated = s?.validated === true;
             const hasRecipe = Boolean(s?.recipe_id);
+            const hasGeneratedRecipe = Boolean(
+              s?.generated_recipe &&
+                (Array.isArray(s?.generated_recipe?.ingredients) ||
+                  s?.generated_recipe?.description_courte)
+            );
             const canDrag =
               isValidated &&
               (s?.recipe_id || (s?.free_text && String(s?.free_text || "").trim()));
@@ -2022,7 +2037,8 @@ export default function CockpitWeek() {
                 (!s?.source_type ||
                   s?.source_type === "CHAT_USER" ||
                   s?.source_type === "USER" ||
-                  s?.source_type === "MANUAL")
+                  s?.source_type === "MANUAL") &&
+                !hasGeneratedRecipe
             );
 
             const canFreeText =
@@ -2172,7 +2188,7 @@ export default function CockpitWeek() {
                               const slotPeople = normalizePeopleFromSlot(s?.people);
                               if (rid) {
                                 prefetchRecipe(rid);
-                              } else if (freeText) {
+                              } else if (freeText && !s?.generated_recipe) {
                                 prefetchFreeTextPreview(freeText, slotPeople);
                               }
                             }}
