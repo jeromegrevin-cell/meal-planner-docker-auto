@@ -548,9 +548,16 @@ export default function CockpitWeek() {
       if (j?.menu_proposals) {
         setMenuProposals((prev) => ({ ...prev, ...j.menu_proposals }));
       }
+      const isForceMenu = rejectAction?.action_type === "force_menu";
       setChatMessages((prev) =>
         prev.map((m) =>
-          m.id === messageId ? { ...m, status: "applied", text: `${m.text} ❌` } : m
+          m.id === messageId
+            ? {
+                ...m,
+                status: "applied",
+                text: isForceMenu ? `${m.text} ✅ (sans recette)` : `${m.text} ❌`
+              }
+            : m
         )
       );
     } catch (e) {
@@ -2329,8 +2336,12 @@ export default function CockpitWeek() {
                 </div>
                 {m.action && m.status === "pending" ? (
                   <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-                    <button onClick={() => applyChatAction(m.id, m.action)}>Valider</button>
-                    <button onClick={() => rejectChatAction(m.id)}>Refuser</button>
+                    <button onClick={() => applyChatAction(m.id, m.action)}>
+                      {m.action?.action_type === "force_menu" ? "Oui (recette)" : "Valider"}
+                    </button>
+                    <button onClick={() => rejectChatAction(m.id)}>
+                      {m.action?.action_type === "force_menu" ? "Non (sans recette)" : "Refuser"}
+                    </button>
                   </div>
                 ) : null}
               </div>
