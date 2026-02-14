@@ -66,6 +66,20 @@ function getCheapModel() {
   return process.env.OPENAI_MODEL_CHEAP || process.env.OPENAI_MODEL || "gpt-5.2";
 }
 
+function getMenuGenerateModel() {
+  return process.env.OPENAI_MODEL_MENU || getCheapModel();
+}
+
+function getMenuGenerateAiMaxSlots() {
+  const v = Number(process.env.MEAL_PLANNER_MENU_AI_MAX_SLOTS || 0);
+  return Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0;
+}
+
+function getMenuGenerateAttempts() {
+  const v = Number(process.env.MEAL_PLANNER_MENU_AI_ATTEMPTS || 1);
+  return Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 1;
+}
+
 // ---------- Utils ----------
 let cachedStaticConstraints = null;
 let cachedStaticConstraintsMtime = 0;
@@ -1445,7 +1459,7 @@ router.post("/current", async (req, res) => {
     let warning = null;
 
     let openai = getOpenAIClient();
-    const model = getModel();
+    const model = getCheapModel();
 
     if (openai) {
       try {
@@ -1592,7 +1606,9 @@ router.post("/proposals/generate", async (req, res) => {
     }
 
     const openai = getOpenAIClient();
-    const model = getModel();
+    const model = getMenuGenerateModel();
+    const aiMaxSlots = getMenuGenerateAiMaxSlots();
+    const aiAttempts = getMenuGenerateAttempts();
 
     const weekData = await readJson(path.join(DATA_DIR, "weeks", `${weekId}.json`)).catch(
       () => null
@@ -1801,23 +1817,15 @@ router.post("/proposals/generate", async (req, res) => {
     );
 
     const slotCount = filteredSlots.length;
-    const minAI = Math.floor(slotCount * 0.8);
-    const maxAI = Math.ceil(slotCount * 0.8);
-    const minDrive = slotCount - maxAI;
-    const maxDrive = slotCount - minAI;
-    const desiredDrive = Math.round(slotCount * 0.2);
-    const driveSlotsCount = Math.min(
-      driveCandidates.length,
-      Math.max(minDrive, Math.min(maxDrive, desiredDrive))
-    );
-    const ratioWarning = driveSlotsCount < minDrive ? "drive_insufficient_for_max_ai" : null;
+    const aiTargetSlots = Math.min(slotCount, aiMaxSlots);
+    const minAI = 0;
+    const maxAI = aiTargetSlots;
+    const ratioWarning = null;
     let ratioRelaxed = false;
 
-    if (driveCandidates.length > 0 && driveSlotsCount > 0) {
+    if (driveCandidates.length > 0) {
       const driveMap = new Map();
-      const driveSlots = new Set(shuffle(filteredSlots).slice(0, driveSlotsCount));
       for (const slot of filteredSlots) {
-        if (!driveSlots.has(slot)) continue;
         if (driveCandidates.length === 0) break;
         const title = driveCandidates.shift();
         if (isLeftoverTitle(title)) continue;
@@ -1839,16 +1847,19 @@ router.post("/proposals/generate", async (req, res) => {
     }
 
     const remainingSlotsInitial = filteredSlots.filter((s) => !parsedMap?.has(s));
-    if (remainingSlotsInitial.length > 0 && !openaiAvailable) {
+    const remainingSlotsForAi =
+      aiTargetSlots > 0 ? remainingSlotsInitial.slice(0, aiTargetSlots) : [];
+    if (remainingSlotsForAi.length > 0 && !openaiAvailable) {
       return res.status(500).json({ error: "openai_not_configured" });
     }
 
-    if (openaiAvailable && parsedMap?.size !== filteredSlots.length) {
+    if (openaiAvailable && remainingSlotsForAi.length > 0) {
       try {
         let attempts = 0;
-        while (attempts < 3) {
+        while (attempts < aiAttempts) {
           attempts += 1;
-          const remainingSlots = filteredSlots.filter((s) => !parsedMap?.has(s));
+          const remainingSlots = remainingSlotsForAi.filter((s) => !parsedMap?.has(s));
+          if (remainingSlots.length === 0) break;
           const constraints = await readConstraints();
           const globalConstraints = constraints.global || [];
           const weekConstraints = constraints.weeks?.[weekId] || [];
@@ -1856,7 +1867,7 @@ router.post("/proposals/generate", async (req, res) => {
             globalConstraints.length || weekConstraints.length
               ? `Contraintes utilisateur: ${[...globalConstraints, ...weekConstraints].join(" | ")}`
               : "Contraintes utilisateur: aucune.";
-          const staticConstraintsLines = buildStaticConstraintsPromptLines();
+          const staticConstraintsLines = buildStaticConstraintsPromptSummaryLines();
           const assumptions =
             "Contexte: France (hémisphère Nord). Date de référence: 25 janvier 2026.";
           const resp = await openai.responses.create({
@@ -1899,7 +1910,7 @@ router.post("/proposals/generate", async (req, res) => {
             isIngredientAllowed,
             onIngredientUsed: markIngredientUsed
           });
-          if (parsed.map.size === remainingSlots.length) {
+          if (parsed.map.size > 0) {
             parsedMap = parsedMap || new Map();
             for (const [slot, title] of parsed.map.entries()) {
               parsedMap.set(slot, title);
@@ -1908,7 +1919,7 @@ router.post("/proposals/generate", async (req, res) => {
               const tKey = titleKey(title);
               if (tKey) usedKeysForUniq.add(tKey);
             }
-            break;
+            if (parsed.map.size === remainingSlots.length) break;
           }
           ingredientUsage.clear();
           for (const [k, v] of usageSnapshot.entries()) {
@@ -1946,7 +1957,7 @@ router.post("/proposals/generate", async (req, res) => {
       return null;
     };
 
-    if (!openaiAvailable || !parsedMap || parsedMap.size !== filteredSlots.length) {
+    if (!parsedMap || parsedMap.size !== filteredSlots.length) {
       // Fallback: fill remaining slots from Drive if AI fails or output is incomplete.
       parsedMap = parsedMap || new Map();
       const missingSlots = filteredSlots.filter((s) => !parsedMap.has(s));
@@ -1958,6 +1969,22 @@ router.post("/proposals/generate", async (req, res) => {
         usedTitlesForUniq.add(picked.key);
         if (picked.tKey) usedKeysForUniq.add(picked.tKey);
         if (picked.iKey) markIngredientUsed(picked.iKey, slot);
+      }
+    }
+
+    if (aiMaxSlots === 0 && parsedMap && parsedMap.size !== filteredSlots.length) {
+      const fallbackTitles = shuffle(
+        driveTitles.filter((t) => t && !isLeftoverTitle(t))
+      );
+      const missingSlots = filteredSlots.filter((s) => !parsedMap.has(s));
+      let idx = 0;
+      for (const slot of missingSlots) {
+        if (fallbackTitles.length === 0) break;
+        const title = fallbackTitles[idx % fallbackTitles.length];
+        idx += 1;
+        if (!title) continue;
+        parsedMap.set(slot, title);
+        sourceBySlot[slot] = "DRIVE_INDEX";
       }
     }
 
