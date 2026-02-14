@@ -562,6 +562,19 @@ export default function CockpitWeek() {
     }
   }
 
+  function beginDrag(slot, e) {
+    dragFromSlotRef.current = slot;
+    try {
+      e.dataTransfer.setData("text/plain", slot);
+      e.dataTransfer.effectAllowed = "move";
+    } catch (_e) {}
+  }
+
+  function endDrag() {
+    dragFromSlotRef.current = null;
+    setDragOverSlot(null);
+  }
+
   async function rejectChatAction(messageId) {
     const msg = chatMessages.find((m) => m.id === messageId);
     const rejectAction = msg?.rejectAction || null;
@@ -2133,7 +2146,13 @@ export default function CockpitWeek() {
                   {isValidated ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ fontWeight: 400, fontSize: 15 }}>
-                        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
+                        <span
+                          style={{ display: "inline-flex", alignItems: "baseline", gap: 6, cursor: "grab" }}
+                          draggable
+                          onDragStart={(e) => beginDrag(slot, e)}
+                          onDragEnd={endDrag}
+                          title="Glisser pour déplacer"
+                        >
                           {validatedIsDrive ? <DriveIcon size={14} /> : null}
                           {validatedLabel(s)}
                         </span>
@@ -2272,16 +2291,9 @@ export default function CockpitWeek() {
                               draggable={canDragProposal}
                               onDragStart={(e) => {
                                 if (!canDragProposal) return;
-                                dragFromSlotRef.current = slot;
-                                try {
-                                  e.dataTransfer.setData("text/plain", slot);
-                                  e.dataTransfer.effectAllowed = "move";
-                                } catch (_e) {}
+                                beginDrag(slot, e);
                               }}
-                              onDragEnd={() => {
-                                dragFromSlotRef.current = null;
-                                setDragOverSlot(null);
-                              }}
+                              onDragEnd={endDrag}
                               title={
                                 canDragProposal
                                   ? "Glisser pour déplacer cette proposition"
