@@ -301,6 +301,26 @@ function normalizePlain(text) {
 }
 
 const MAIN_INGREDIENT_PATTERNS = [
+  {
+    key: "pommes_de_terre",
+    label: "pommes de terre",
+    terms: ["pomme de terre", "pommes de terre", "pdt", "patate", "patates", "dauphinois"]
+  },
+  {
+    key: "pates",
+    label: "pâtes",
+    terms: [
+      "pates",
+      "pâtes",
+      "spaghetti",
+      "penne",
+      "fusilli",
+      "tagliatelle",
+      "macaroni",
+      "lasagnes",
+      "lasagna"
+    ]
+  },
   { key: "poulet", label: "poulet", terms: ["poulet", "volaille"] },
   { key: "dinde", label: "dinde", terms: ["dinde"] },
   { key: "boeuf", label: "boeuf", terms: ["boeuf", "bœuf", "steak", "hach", "entrecote"] },
@@ -446,6 +466,22 @@ const SLOT_LABELS = {
   sun_lunch: "Dimanche déjeuner",
   sun_dinner: "Dimanche dîner"
 };
+
+const SLOT_DAY_INDEX = {
+  sat: 0,
+  sun: 1,
+  mon: 2,
+  tue: 3,
+  wed: 4,
+  thu: 5,
+  fri: 6
+};
+
+function slotDayIndex(slot) {
+  const prefix = String(slot || "").split("_")[0];
+  if (!prefix) return null;
+  return Number.isFinite(SLOT_DAY_INDEX[prefix]) ? SLOT_DAY_INDEX[prefix] : null;
+}
 
 function detectCancelSlot(message) {
   const msg = normalizePlain(message);
@@ -630,6 +666,110 @@ function detectWeekBanConstraint(message) {
   return { constraint: `Interdit: ${item}` };
 }
 
+function stripTitlePrefixes(title) {
+  let out = String(title || "").trim();
+  if (!out) return "";
+  const prefixes = [
+    /^donne\s+moi\s+/i,
+    /^donne-moi\s+/i,
+    /^propose\s+moi\s+/i,
+    /^propose-moi\s+/i,
+    /^je\s+veux\s+/i,
+    /^je\s+voudrais\s+/i,
+    /^je\s+souhaite\s+/i,
+    /^j['’]aimerais\s+/i,
+    /^mets?\s+/i,
+    /^mettez\s+/i,
+    /^ajoute\s+/i,
+    /^ajouter\s+/i,
+    /^une\s+recette\s+de\s+/i,
+    /^recette\s+de\s+/i,
+    /^recette\s+d['’]\s*/i
+  ];
+  for (const re of prefixes) {
+    out = out.replace(re, "");
+  }
+  return out.trim();
+}
+
+function detectTitleForSlot(message) {
+  const raw = String(message || "").trim();
+  if (!raw) return null;
+  const msg = normalizePlain(raw);
+  if (!msg) return null;
+
+  const dayMap = {
+    lundi: "mon",
+    mardi: "tue",
+    mercredi: "wed",
+    jeudi: "thu",
+    vendredi: "fri",
+    samedi: "sat",
+    dimanche: "sun"
+  };
+  const slotRe =
+    /(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|déjeuner|midi|diner|dîner|soir)/i;
+  const slotMatch = raw.match(slotRe);
+  if (!slotMatch) return null;
+  const day = dayMap[normalizePlain(slotMatch[1])];
+  const meal = normalizePlain(slotMatch[2]);
+  const isLunch = meal === "dejeuner" || meal === "midi";
+  const slot = `${day}_${isLunch ? "lunch" : "dinner"}`;
+  if (!SLOT_LABELS[slot]) return null;
+
+  let title = "";
+  const pourRe =
+    /\bpour\s+(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|déjeuner|midi|diner|dîner|soir)\b/i;
+  const pourMatch = raw.match(pourRe);
+  if (pourMatch?.index != null && pourMatch.index > 0) {
+    title = raw.slice(0, pourMatch.index).trim();
+  } else if (slotMatch?.index != null) {
+    const after = raw.slice(slotMatch.index + slotMatch[0].length).trim();
+    if (after) {
+      title = after.replace(/^[:\-\u2013\u2014>\s]+/, "").trim();
+    }
+  }
+
+  title = stripTitlePrefixes(title);
+  title = title.replace(/^["'«»]+|["'«»]+$/g, "").trim();
+
+  const normalizedTitle = normalizePlain(title);
+  const useless = new Set([
+    "quoi",
+    "quel",
+    "quelle",
+    "quels",
+    "quelles",
+    "que",
+    "quelque chose",
+    "recette",
+    "une recette",
+    "un plat",
+    "plat",
+    "menu",
+    "un menu"
+  ]);
+  const intentKeywords = [
+    "donne",
+    "propose",
+    "mets",
+    "mettez",
+    "je veux",
+    "je voudrais",
+    "je souhaite",
+    "j aime",
+    "recette",
+    "plat",
+    "menu"
+  ];
+  const hasIntent = intentKeywords.some((k) => msg.includes(k));
+  if (!normalizedTitle || useless.has(normalizedTitle)) {
+    return hasIntent ? { slot, title: "" } : null;
+  }
+
+  return { slot, title };
+}
+
 function detectRecipeForSlot(message) {
   const raw = String(message || "").trim();
   if (!raw) return null;
@@ -692,6 +832,189 @@ function detectRecipeForSlot(message) {
   title = title.replace(/^["'«»]+|["'«»]+$/g, "").trim();
 
   return { slot, title };
+}
+
+function detectSlotInMessage(message) {
+  const raw = String(message || "").trim();
+  if (!raw) return null;
+  const msg = normalizePlain(raw);
+  if (!msg) return null;
+
+  const dayMap = {
+    lundi: "mon",
+    mardi: "tue",
+    mercredi: "wed",
+    jeudi: "thu",
+    vendredi: "fri",
+    samedi: "sat",
+    dimanche: "sun"
+  };
+  const slotRe =
+    /(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|déjeuner|midi|diner|dîner|soir)/i;
+  const slotMatch = raw.match(slotRe);
+  if (!slotMatch) return null;
+  const day = dayMap[normalizePlain(slotMatch[1])];
+  const meal = normalizePlain(slotMatch[2]);
+  const isLunch = meal === "dejeuner" || meal === "midi";
+  const slot = `${day}_${isLunch ? "lunch" : "dinner"}`;
+  return SLOT_LABELS[slot] ? slot : null;
+}
+
+function tokenizeForMatch(text) {
+  const base = normalizePlain(text);
+  if (!base) return [];
+  const stop = new Set([
+    "de",
+    "du",
+    "des",
+    "la",
+    "le",
+    "les",
+    "au",
+    "aux",
+    "a",
+    "et",
+    "en",
+    "d",
+    "l",
+    "un",
+    "une",
+    "pour",
+    "avec",
+    "sans",
+    "recette",
+    "plat",
+    "menu"
+  ]);
+  return base
+    .split(" ")
+    .map((t) => t.trim())
+    .filter((t) => t && !stop.has(t));
+}
+
+function extractRecipeQuery(message) {
+  const raw = String(message || "").trim();
+  if (!raw) return "";
+  let text = raw;
+  const slotRe =
+    /(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|déjeuner|midi|diner|dîner|soir)/i;
+  const slotMatch = text.match(slotRe);
+  if (slotMatch?.index != null) {
+    text = text.slice(0, slotMatch.index).trim();
+    text = text.replace(/\b(pour|le|la|du)\s*$/i, "").trim();
+  }
+  text = stripTitlePrefixes(text);
+  text = text.replace(/\b(recette|plats?|menu)\b/i, "").trim();
+  return text;
+}
+
+function rankTitlesByQuery(titles, query, usedTitles = null) {
+  const qTokens = tokenizeForMatch(query);
+  const scored = [];
+  for (const title of titles) {
+    const t = String(title || "").trim();
+    if (!t) continue;
+    const tLower = t.toLowerCase();
+    if (usedTitles && usedTitles.has(tLower)) continue;
+    if (!qTokens.length) {
+      scored.push({ title: t, score: 0 });
+      continue;
+    }
+    const tTokens = new Set(tokenizeForMatch(t));
+    let score = 0;
+    for (const token of qTokens) {
+      if (tTokens.has(token)) score += 1;
+    }
+    if (score > 0) scored.push({ title: t, score });
+  }
+  if (!scored.length) return [];
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.title.length - b.title.length;
+  });
+  return scored.map((s) => s.title);
+}
+
+async function collectUsedTitlesForWeek(weekData, menuProposals) {
+  const used = new Set();
+  const slots = weekData?.slots || {};
+  const recipeCache = new Map();
+  for (const slot of Object.keys(slots)) {
+    const slotData = slots[slot] || {};
+    const free = String(slotData?.free_text || "").trim();
+    if (free) {
+      used.add(free.toLowerCase());
+      continue;
+    }
+    const recipeId = String(slotData?.recipe_id || "").trim();
+    if (recipeId) {
+      const t = await readRecipeTitleById(recipeId, recipeCache);
+      if (t) used.add(t.toLowerCase());
+    }
+  }
+  for (const listRaw of Object.values(menuProposals || {})) {
+    const list = Array.isArray(listRaw) ? listRaw : [];
+    for (const p of list) {
+      const t = String(p?.title || "").trim();
+      if (t) used.add(t.toLowerCase());
+    }
+  }
+  return used;
+}
+
+function detectRecipeSuggestionRequest(message) {
+  const raw = String(message || "").trim();
+  if (!raw) return null;
+  const msg = normalizePlain(raw);
+  if (!msg) return null;
+  const intent = [
+    "propose",
+    "propose moi",
+    "propose-moi",
+    "donne moi",
+    "donne-moi",
+    "suggere",
+    "suggere moi",
+    "suggere-moi",
+    "recette"
+  ];
+  const hasIntent = intent.some((k) => msg.includes(normalizePlain(k)));
+  if (!hasIntent) return null;
+  const slot = detectSlotInMessage(raw);
+  const query = extractRecipeQuery(raw);
+  return { slot, query };
+}
+
+function wantsMoreRecipes(message) {
+  const msg = normalizePlain(message);
+  if (!msg) return false;
+  const hints = [
+    "autres",
+    "d autres",
+    "d autres recettes",
+    "plus",
+    "plus de recettes",
+    "autre",
+    "encore",
+    "different",
+    "differentes",
+    "différentes"
+  ];
+  return hints.some((h) => msg.includes(normalizePlain(h)));
+}
+
+function buildRecipeChoices(titles, usedTitles, query, offset, limit) {
+  let ranked = rankTitlesByQuery(titles, query, usedTitles);
+  if (!ranked.length) ranked = rankTitlesByQuery(titles, "", usedTitles);
+  if (!ranked.length) return { choices: [], offset: 0, total: 0 };
+  const total = ranked.length;
+  const start = Math.min(offset || 0, Math.max(total - 1, 0));
+  const slice = ranked.slice(start, start + limit);
+  if (slice.length < limit && total > slice.length) {
+    slice.push(...ranked.slice(0, limit - slice.length));
+  }
+  const nextOffset = (start + limit) % Math.max(total, 1);
+  return { choices: slice, offset: nextOffset, total };
 }
 
 function extractSansItem(text) {
@@ -844,11 +1167,11 @@ function parseProposalLines(
     if (existingTitles && existingTitles.has(key)) continue;
     if (existingKeys && tKey && existingKeys.has(tKey)) continue;
     const ingKey = opts.ingredientKeyFn ? opts.ingredientKeyFn(title) : "";
-    if (opts.isIngredientAllowed && ingKey && !opts.isIngredientAllowed(ingKey)) continue;
+    if (opts.isIngredientAllowed && ingKey && !opts.isIngredientAllowed(ingKey, slot)) continue;
     map.set(slot, title);
     titles.add(key);
     if (tKey) keys.add(tKey);
-    if (ingKey && opts.onIngredientUsed) opts.onIngredientUsed(ingKey);
+    if (ingKey && opts.onIngredientUsed) opts.onIngredientUsed(ingKey, slot);
   }
 
   return { map, titles, keys };
@@ -927,6 +1250,32 @@ async function buildPreviewFromTitle(title, people) {
     ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
     : "";
 
+  const previewSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      description_courte: { type: "string" },
+      ingredients: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            item: { type: "string" },
+            qty: { type: "string" },
+            unit: { type: "string" }
+          },
+          required: ["item", "qty", "unit"]
+        }
+      },
+      preparation_steps: {
+        type: "array",
+        items: { type: "string" }
+      }
+    },
+    required: ["description_courte", "ingredients", "preparation_steps"]
+  };
+
   const prompt = [
     `Génère une fiche courte de recette pour : "${title}".`,
     peopleLine,
@@ -937,13 +1286,27 @@ async function buildPreviewFromTitle(title, people) {
 
   const resp = await openai.responses.create({
     model,
-    input: prompt
+    input: prompt,
+    text: {
+      format: {
+        type: "json_schema",
+        name: "recipe_preview",
+        strict: true,
+        schema: previewSchema
+      }
+    }
   });
 
   const raw = resp.output_text || "";
   try {
     return JSON.parse(raw);
   } catch (_e) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch {}
+    }
     const err = new Error("preview_parse_failed");
     err.code = "preview_parse_failed";
     err.raw_text = raw;
@@ -1261,25 +1624,62 @@ router.post("/proposals/generate", async (req, res) => {
     const maxIngredientPerWeek = Number(
       weekData?.rules_readonly?.main_ingredient_max_per_week || 2
     );
-    const ingredientCounts = new Map();
+    const minDaysBetweenRepeat = Number(
+      weekData?.rules_readonly?.main_ingredient_min_day_gap_if_used_twice ??
+        weekData?.rules_readonly?.min_days_between_repeat ??
+        2
+    );
+    const ingredientUsage = new Map();
     const ingredientDisallowed = new Set(historyIngredientKeys);
 
-    const markIngredientUsed = (key) => {
-      if (!key) return;
-      ingredientCounts.set(key, (ingredientCounts.get(key) || 0) + 1);
+    const getUsage = (key) => {
+      if (!ingredientUsage.has(key)) {
+        ingredientUsage.set(key, { count: 0, days: [] });
+      }
+      return ingredientUsage.get(key);
     };
-    const isIngredientAllowed = (key) => {
+    const markIngredientUsed = (key, slot) => {
+      if (!key) return;
+      const usage = getUsage(key);
+      usage.count += 1;
+      const day = slotDayIndex(slot);
+      if (day != null) usage.days.push(day);
+    };
+    const isIngredientAllowed = (key, slot) => {
       if (!key) return true;
       if (ingredientDisallowed.has(key)) return false;
-      const count = ingredientCounts.get(key) || 0;
-      return count < maxIngredientPerWeek;
+      const usage = ingredientUsage.get(key);
+      const count = usage?.count || 0;
+      const day = slotDayIndex(slot);
+      const alreadyUsedDay = day != null && usage?.days?.includes(day);
+      if (!alreadyUsedDay && count >= maxIngredientPerWeek) return false;
+      if (
+        !alreadyUsedDay &&
+        Number.isFinite(minDaysBetweenRepeat) &&
+        minDaysBetweenRepeat > 0 &&
+        day != null
+      ) {
+        for (const usedDay of usage?.days || []) {
+          if (Math.abs(day - usedDay) < minDaysBetweenRepeat) return false;
+        }
+      }
+      return true;
     };
 
     const recipeCache = new Map();
-    const currentWeekTitles = await collectWeekSlotTitles(weekData, recipeCache);
-    for (const t of currentWeekTitles) {
-      const k = mainIngredientKeyFromTitle(t);
-      if (k) markIngredientUsed(k);
+    const weekSlots = weekData?.slots || {};
+    for (const [slot, slotData] of Object.entries(weekSlots)) {
+      const free = String(slotData?.free_text || "").trim();
+      let title = free;
+      if (!title) {
+        const recipeId = String(slotData?.recipe_id || "").trim();
+        if (recipeId) {
+          title = await readRecipeTitleById(recipeId, recipeCache);
+        }
+      }
+      if (!title) continue;
+      const k = mainIngredientKeyFromTitle(title);
+      if (k) markIngredientUsed(k, slot);
     }
 
     for (const [slot, listRaw] of Object.entries(nextData.menu_proposals || {})) {
@@ -1289,13 +1689,13 @@ router.post("/proposals/generate", async (req, res) => {
       if (!firstTitle) continue;
       const k = mainIngredientKeyFromTitle(firstTitle);
       if (!k) continue;
-      markIngredientUsed(k);
+      markIngredientUsed(k, slot);
     }
 
     const avoidIngredients = Array.from(
       new Set([
         ...Array.from(ingredientDisallowed.values()),
-        ...Array.from(ingredientCounts.keys())
+        ...Array.from(ingredientUsage.keys())
       ])
     );
     const avoidIngredientLine =
@@ -1334,7 +1734,7 @@ router.post("/proposals/generate", async (req, res) => {
         const key = t.toLowerCase();
         const tKey = titleKey(t);
         const iKey = mainIngredientKeyFromTitle(t);
-        if (iKey && !isIngredientAllowed(iKey)) return false;
+        if (iKey && !isIngredientAllowed(iKey, null)) return false;
         return key && !usedTitlesForUniq.has(key) && (!tKey || !usedKeysForUniq.has(tKey));
       })
     );
@@ -1362,13 +1762,13 @@ router.post("/proposals/generate", async (req, res) => {
         const key = title.toLowerCase();
         const tKey = titleKey(title);
         const iKey = mainIngredientKeyFromTitle(title);
-        if (iKey && !isIngredientAllowed(iKey)) continue;
+        if (iKey && !isIngredientAllowed(iKey, slot)) continue;
         if (usedTitlesForUniq.has(key)) continue;
         if (tKey && usedKeysForUniq.has(tKey)) continue;
         driveMap.set(slot, title);
         usedTitlesForUniq.add(key);
         if (tKey) usedKeysForUniq.add(tKey);
-        if (iKey) markIngredientUsed(iKey);
+        if (iKey) markIngredientUsed(iKey, slot);
         sourceBySlot[slot] = "DRIVE_INDEX";
       }
       if (driveMap.size > 0) {
@@ -1425,7 +1825,12 @@ router.post("/proposals/generate", async (req, res) => {
             continue;
           }
           lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
-          const countsSnapshot = new Map(ingredientCounts);
+          const usageSnapshot = new Map(
+            Array.from(ingredientUsage.entries()).map(([k, v]) => [
+              k,
+              { count: v.count, days: [...v.days] }
+            ])
+          );
           const parsed = parseProposalLines(lines, remainingSlots, usedTitlesForUniq, usedKeysForUniq, {
             ingredientKeyFn: mainIngredientKeyFromTitle,
             isIngredientAllowed,
@@ -1442,9 +1847,9 @@ router.post("/proposals/generate", async (req, res) => {
             }
             break;
           }
-          ingredientCounts.clear();
-          for (const [k, v] of countsSnapshot.entries()) {
-            ingredientCounts.set(k, v);
+          ingredientUsage.clear();
+          for (const [k, v] of usageSnapshot.entries()) {
+            ingredientUsage.set(k, v);
           }
           rawText = "";
           lines = [];
@@ -1462,7 +1867,7 @@ router.post("/proposals/generate", async (req, res) => {
       }
     }
 
-    const takeDriveCandidate = () => {
+    const takeDriveCandidate = (slot) => {
       while (driveCandidates.length > 0) {
         const title = driveCandidates.shift();
         if (!title) continue;
@@ -1471,7 +1876,7 @@ router.post("/proposals/generate", async (req, res) => {
         if (usedTitlesForUniq.has(key)) continue;
         if (tKey && usedKeysForUniq.has(tKey)) continue;
         const iKey = mainIngredientKeyFromTitle(title);
-        if (iKey && !isIngredientAllowed(iKey)) continue;
+        if (iKey && !isIngredientAllowed(iKey, slot)) continue;
         return { title, key, tKey, iKey };
       }
       return null;
@@ -1482,13 +1887,13 @@ router.post("/proposals/generate", async (req, res) => {
       parsedMap = parsedMap || new Map();
       const missingSlots = filteredSlots.filter((s) => !parsedMap.has(s));
       for (const slot of missingSlots) {
-        const picked = takeDriveCandidate();
+        const picked = takeDriveCandidate(slot);
         if (!picked) break;
         parsedMap.set(slot, picked.title);
         sourceBySlot[slot] = "DRIVE_INDEX";
         usedTitlesForUniq.add(picked.key);
         if (picked.tKey) usedKeysForUniq.add(picked.tKey);
-        if (picked.iKey) markIngredientUsed(picked.iKey);
+        if (picked.iKey) markIngredientUsed(picked.iKey, slot);
       }
     }
 
@@ -1529,7 +1934,7 @@ router.post("/proposals/generate", async (req, res) => {
       const titleLower = title.toLowerCase();
       const tKey = titleKey(title);
       const iKey = mainIngredientKeyFromTitle(title);
-      if (iKey && !isIngredientAllowed(iKey)) continue;
+      if (iKey && !isIngredientAllowed(iKey, slot)) continue;
       if (usedTitles.has(titleLower)) continue;
       if (tKey && usedTitleKeys.has(tKey)) continue;
 
@@ -1577,7 +1982,7 @@ router.post("/proposals/generate", async (req, res) => {
         if (tKey) takenKeys.add(tKey);
       }
     }
-    const pickDriveCandidate = () => {
+    const pickDriveCandidate = (slot) => {
       while (driveCandidates.length > 0) {
         const title = driveCandidates.shift();
         if (!title) continue;
@@ -1586,7 +1991,7 @@ router.post("/proposals/generate", async (req, res) => {
         if (takenTitles.has(key)) continue;
         if (tKey && takenKeys.has(tKey)) continue;
         const iKey = mainIngredientKeyFromTitle(title);
-        if (iKey && !isIngredientAllowed(iKey)) continue;
+        if (iKey && !isIngredientAllowed(iKey, slot)) continue;
         return { title, key, tKey, iKey };
       }
       return null;
@@ -1597,7 +2002,7 @@ router.post("/proposals/generate", async (req, res) => {
         ? nextData.menu_proposals[slot]
         : [];
       if (list.length > 0) continue;
-      const picked = pickDriveCandidate();
+      const picked = pickDriveCandidate(slot);
       if (!picked) break;
       nextData.menu_proposals[slot] = [
         {
@@ -1613,7 +2018,7 @@ router.post("/proposals/generate", async (req, res) => {
       sourceBySlot[slot] = "DRIVE_INDEX";
       takenTitles.add(picked.key);
       if (picked.tKey) takenKeys.add(picked.tKey);
-      if (picked.iKey) markIngredientUsed(picked.iKey);
+      if (picked.iKey) markIngredientUsed(picked.iKey, slot);
       filledFromDrive += 1;
     }
     if (filledFromDrive > 0) {
@@ -1867,6 +2272,7 @@ router.post("/commands/parse", async (req, res) => {
   if (!message) return res.status(400).json({ error: "missing_message" });
 
   try {
+    const { path: chatPathFile, data: chatData } = await ensureChatFile(weekId);
     const weekData = await readJson(path.join(DATA_DIR, "weeks", `${weekId}.json`)).catch(
       () => null
     );
@@ -1877,6 +2283,130 @@ router.post("/commands/parse", async (req, res) => {
       .filter(([slot]) => !noLunchSlots.has(slot))
       .map(([slot, label]) => `${slot} = ${label}`)
       .join("\n");
+
+    if (chatData?.pending_recipe_target?.title) {
+      const slot = detectSlotInMessage(message);
+      if (slot) {
+        const title = chatData.pending_recipe_target.title;
+        delete chatData.pending_recipe_target;
+        chatData.updated_at = nowIso();
+        await safeWriteChat(chatPathFile, chatData);
+        const label = SLOT_LABELS[slot] || slot;
+        return res.json({
+          ok: true,
+          action: {
+            action_type: "force_menu_confirm",
+            slot,
+            title,
+            source: "CHAT_USER"
+          },
+          summary: `Confirme: tu veux "${title}" (${label}) ? (Valider = oui, Refuser = non)`
+        });
+      }
+      return res.json({
+        ok: true,
+        action: null,
+        summary: `Pour quel repas veux-tu "${chatData.pending_recipe_target.title}" ?`
+      });
+    }
+
+    if (chatData?.pending_recipe_choices?.choices?.length) {
+      const pending = chatData.pending_recipe_choices;
+      const choices = pending.choices;
+      const msg = String(message || "").trim();
+
+      const suggestionRequest = detectRecipeSuggestionRequest(message);
+      const wantsMore = wantsMoreRecipes(message);
+      if (suggestionRequest || wantsMore) {
+        const slot = suggestionRequest?.slot ?? pending.slot ?? null;
+        const query =
+          suggestionRequest?.query != null && suggestionRequest.query !== ""
+            ? suggestionRequest.query
+            : pending.query || "";
+        const driveTitles = await listDriveIndexTitles();
+        const usedTitles = await collectUsedTitlesForWeek(weekData, chatData.menu_proposals || {});
+        const offset = wantsMore ? pending.offset || 0 : 0;
+        const { choices: nextChoices, offset: nextOffset } = buildRecipeChoices(
+          driveTitles,
+          usedTitles,
+          query,
+          offset,
+          5
+        );
+        if (!nextChoices.length) {
+          return res.json({
+            ok: true,
+            action: null,
+            summary: "Je n'ai pas trouvé d'autres idées. Tu veux quel type de recette ?"
+          });
+        }
+        chatData.pending_recipe_choices = {
+          choices: nextChoices,
+          slot: slot || null,
+          query: query || "",
+          offset: nextOffset,
+          created_at: nowIso()
+        };
+        chatData.updated_at = nowIso();
+        await safeWriteChat(chatPathFile, chatData);
+        const list = nextChoices.map((c, i) => `${i + 1}. ${c}`).join("\n");
+        return res.json({
+          ok: true,
+          action: null,
+          summary: `Voici des propositions${query ? ` pour \"${query}\"` : ""}:\n${list}\n\nChoisis 1-${nextChoices.length} ou recopie le titre.`
+        });
+      }
+
+      let chosen = null;
+      const num = Number(msg);
+      if (Number.isInteger(num) && num >= 1 && num <= choices.length) {
+        chosen = choices[num - 1];
+      } else {
+        const normMsg = normalizePlain(msg);
+        chosen = choices.find((c) => normalizePlain(c) === normMsg) || null;
+        if (!chosen) {
+          chosen =
+            choices.find((c) => normalizePlain(c).includes(normMsg)) ||
+            choices.find((c) => normMsg.includes(normalizePlain(c))) ||
+            null;
+        }
+      }
+
+      if (chosen) {
+        const slot = pending.slot || detectSlotInMessage(message);
+        delete chatData.pending_recipe_choices;
+        if (slot) {
+          chatData.updated_at = nowIso();
+          await safeWriteChat(chatPathFile, chatData);
+          const label = SLOT_LABELS[slot] || slot;
+          return res.json({
+            ok: true,
+            action: {
+              action_type: "force_menu_confirm",
+              slot,
+              title: chosen,
+              source: "CHAT_USER"
+            },
+            summary: `Confirme: tu veux "${chosen}" (${label}) ? (Valider = oui, Refuser = non)`
+          });
+        }
+        chatData.pending_recipe_target = { title: chosen, created_at: nowIso() };
+        chatData.updated_at = nowIso();
+        await safeWriteChat(chatPathFile, chatData);
+        return res.json({
+          ok: true,
+          action: null,
+          summary: `Tu choisis "${chosen}". Pour quel repas veux-tu l'utiliser ?`
+        });
+      }
+
+      const list = choices.map((c, i) => `${i + 1}. ${c}`).join("\n");
+      return res.json({
+        ok: true,
+        action: null,
+        summary: `Choisis une option (1-${choices.length}) ou recopie le titre:\n${list}`
+      });
+    }
 
     const cancelSlot = detectCancelSlot(message);
     if (cancelSlot) {
@@ -1934,6 +2464,66 @@ router.post("/commands/parse", async (req, res) => {
         ok: true,
         action: { action_type: "add_constraint_week", ...banAction },
         summary: `Ajouter contrainte semaine: "${banAction.constraint}"`
+      });
+    }
+
+      const recipeSuggestion = detectRecipeSuggestionRequest(message);
+      if (recipeSuggestion) {
+        const slot = recipeSuggestion.slot;
+        const query = recipeSuggestion.query;
+        const driveTitles = await listDriveIndexTitles();
+        const usedTitles = await collectUsedTitlesForWeek(weekData, chatData.menu_proposals || {});
+        const { choices, offset } = buildRecipeChoices(
+          driveTitles,
+          usedTitles,
+          query,
+          0,
+          5
+        );
+        if (!choices.length) {
+          return res.json({
+            ok: true,
+            action: null,
+            summary: "Je n'ai pas trouvé d'idées. Tu veux quel type de recette ?"
+          });
+        }
+        chatData.pending_recipe_choices = {
+          choices,
+          slot: slot || null,
+          query: query || "",
+          offset,
+          created_at: nowIso()
+        };
+        chatData.updated_at = nowIso();
+        await safeWriteChat(chatPathFile, chatData);
+        const list = choices.map((c, i) => `${i + 1}. ${c}`).join("\n");
+      return res.json({
+        ok: true,
+        action: null,
+        summary: `Voici des propositions${query ? ` pour \"${query}\"` : ""}:\n${list}\n\nChoisis 1-${choices.length} ou recopie le titre.`
+      });
+    }
+
+    const titleForSlot = detectTitleForSlot(message);
+    if (titleForSlot) {
+      const { slot, title } = titleForSlot;
+      if (!title) {
+        return res.json({
+          ok: true,
+          action: null,
+          summary: `Quel titre de recette veux-tu pour ${SLOT_LABELS[slot] || slot} ?`
+        });
+      }
+      const label = SLOT_LABELS[slot] || slot;
+      return res.json({
+        ok: true,
+        action: {
+          action_type: "force_menu_confirm",
+          slot,
+          title,
+          source: "CHAT_USER"
+        },
+        summary: `Confirme: tu veux "${title}" (${label}) ? (Valider = oui, Refuser = non)`
       });
     }
 
@@ -2013,7 +2603,12 @@ router.post("/commands/parse", async (req, res) => {
     try {
       action = JSON.parse(raw);
     } catch (_e) {
-      return res.status(500).json({ error: "command_parse_failed", raw_text: raw });
+      console.warn("[commands/parse] invalid json", { raw_text: String(raw).slice(0, 800) });
+      return res.json({
+        ok: true,
+        action: null,
+        summary: "Je n'ai pas compris. Peux-tu reformuler plus simplement ?"
+      });
     }
 
     const actionType = String(action?.action_type || "");

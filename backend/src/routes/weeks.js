@@ -157,6 +157,32 @@ async function buildPreviewFromTitle(title, people) {
     ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
     : "";
 
+  const previewSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      description_courte: { type: "string" },
+      ingredients: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            item: { type: "string" },
+            qty: { type: "string" },
+            unit: { type: "string" }
+          },
+          required: ["item", "qty", "unit"]
+        }
+      },
+      preparation_steps: {
+        type: "array",
+        items: { type: "string" }
+      }
+    },
+    required: ["description_courte", "ingredients", "preparation_steps"]
+  };
+
   const prompt = [
     `Génère une fiche courte de recette pour : "${title}".`,
     peopleLine,
@@ -167,13 +193,27 @@ async function buildPreviewFromTitle(title, people) {
 
   const resp = await openai.responses.create({
     model,
-    input: prompt
+    input: prompt,
+    text: {
+      format: {
+        type: "json_schema",
+        name: "recipe_preview",
+        strict: true,
+        schema: previewSchema
+      }
+    }
   });
 
   const raw = resp.output_text || "";
   try {
     return JSON.parse(raw);
   } catch (_e) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch {}
+    }
     const err = new Error("preview_parse_failed");
     err.code = "preview_parse_failed";
     err.raw_text = raw;
