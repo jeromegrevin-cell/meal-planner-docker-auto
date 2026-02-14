@@ -1250,6 +1250,7 @@ router.post("/proposals/generate", async (req, res) => {
       Math.max(minDrive, Math.min(maxDrive, desiredDrive))
     );
     const ratioWarning = driveSlotsCount < minDrive ? "drive_insufficient_for_max_ai" : null;
+    let ratioRelaxed = false;
 
     if (driveCandidates.length > 0 && driveSlotsCount > 0) {
       const driveMap = new Map();
@@ -1464,10 +1465,74 @@ router.post("/proposals/generate", async (req, res) => {
       nextData.menu_proposals[slot] = unique;
     }
 
+    // If any slot ended up empty (e.g. duplicates removed), fill with Drive titles.
+    const takenTitles = new Set();
+    const takenKeys = new Set();
+    for (const listRaw of Object.values(nextData.menu_proposals || {})) {
+      const list = Array.isArray(listRaw) ? listRaw : [];
+      for (const p of list) {
+        const key = String(p?.title || "").trim().toLowerCase();
+        if (key) takenTitles.add(key);
+        const tKey = titleKey(String(p?.title || "").trim());
+        if (tKey) takenKeys.add(tKey);
+      }
+    }
+    const pickDriveCandidate = () => {
+      while (driveCandidates.length > 0) {
+        const title = driveCandidates.shift();
+        if (!title) continue;
+        const key = title.toLowerCase();
+        const tKey = titleKey(title);
+        if (takenTitles.has(key)) continue;
+        if (tKey && takenKeys.has(tKey)) continue;
+        const iKey = mainIngredientKeyFromTitle(title);
+        if (iKey && !isIngredientAllowed(iKey)) continue;
+        return { title, key, tKey, iKey };
+      }
+      return null;
+    };
+    let filledFromDrive = 0;
+    for (const slot of filteredSlots) {
+      const list = Array.isArray(nextData.menu_proposals?.[slot])
+        ? nextData.menu_proposals[slot]
+        : [];
+      if (list.length > 0) continue;
+      const picked = pickDriveCandidate();
+      if (!picked) break;
+      nextData.menu_proposals[slot] = [
+        {
+          proposal_id: newProposalId(),
+          title: picked.title,
+          recipe_id: null,
+          source: "DRIVE_INDEX",
+          status: "PROPOSED",
+          to_save: false,
+          created_at: createdAt
+        }
+      ];
+      sourceBySlot[slot] = "DRIVE_INDEX";
+      takenTitles.add(picked.key);
+      if (picked.tKey) takenKeys.add(picked.tKey);
+      if (picked.iKey) markIngredientUsed(picked.iKey);
+      filledFromDrive += 1;
+    }
+    if (filledFromDrive > 0) {
+      ratioRelaxed = true;
+    }
+
     const aiCount = filteredSlots.filter((s) => sourceBySlot[s] === "CHAT_GENERATED").length;
     const driveCount = filteredSlots.filter((s) => sourceBySlot[s] === "DRIVE_INDEX").length;
     if (aiCount < minAI) {
-      if (rawText) {
+      if (ratioRelaxed) {
+        console.warn("[proposals/generate] ai_ratio_too_low_relaxed", {
+          weekId,
+          aiCount,
+          driveCount,
+          minAI,
+          maxAI,
+          filledFromDrive
+        });
+      } else if (rawText) {
         console.warn("[proposals/generate] ai_ratio_too_low", {
           weekId,
           aiCount,
@@ -1485,10 +1550,12 @@ router.post("/proposals/generate", async (req, res) => {
           maxAI
         });
       }
-      return res.status(409).json({
-        error: "ai_ratio_too_low",
-        details: { aiCount, driveCount, minAI, maxAI }
-      });
+      if (!ratioRelaxed) {
+        return res.status(409).json({
+          error: "ai_ratio_too_low",
+          details: { aiCount, driveCount, minAI, maxAI }
+        });
+      }
     }
     if (aiCount > maxAI && !ratioWarning) {
       return res.status(409).json({
@@ -1533,7 +1600,7 @@ router.post("/proposals/generate", async (req, res) => {
         drive_count: filteredSlots.filter((s) => sourceBySlot[s] === "DRIVE_INDEX").length,
         min_ai: minAI,
         max_ai: maxAI,
-        warning: ratioWarning
+        warning: ratioWarning || (ratioRelaxed ? "ai_ratio_relaxed" : null)
       }
     });
   } catch (e) {
