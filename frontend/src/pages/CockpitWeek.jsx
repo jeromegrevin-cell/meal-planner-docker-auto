@@ -357,6 +357,7 @@ export default function CockpitWeek() {
   const [keepText, setKeepText] = useState("");
   const [dragOverSlot, setDragOverSlot] = useState(null);
   const dragFromSlotRef = useRef(null);
+  const [proposalsGenerating, setProposalsGenerating] = useState(false);
 
   // Validated recipe modal
   const [recipeModal, setRecipeModal] = useState(null); // { slot }
@@ -1075,6 +1076,7 @@ export default function CockpitWeek() {
         alert("Merci de renseigner une date de début et une date de fin.");
         return;
       }
+      setProposalsGenerating(true);
       let computedWeekId = buildWeekIdForDates(prepStart, weekIds);
       if (!computedWeekId) {
         alert("Impossible de calculer la référence de semaine.");
@@ -1141,6 +1143,8 @@ export default function CockpitWeek() {
       await loadMenuProposals(computedWeekId);
     } catch (e) {
       alert(`Propositions non generees: ${e.message}`);
+    } finally {
+      setProposalsGenerating(false);
     }
   }
 
@@ -1933,11 +1937,20 @@ export default function CockpitWeek() {
           </div>
           <button
             onClick={() => generateProposals(week?.week_id)}
-            disabled={!week?.week_id}
+            disabled={!week?.week_id || proposalsGenerating}
             className="btn-side"
-            style={{ fontSize: 13, padding: "3px 6px" }}
+            style={{
+              fontSize: 13,
+              padding: "3px 6px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6
+            }}
           >
             Nouveaux menus
+            {proposalsGenerating ? (
+              <span className="menu-spinner" aria-label="Chargement" />
+            ) : null}
           </button>
           <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
             Les recettes non validées seront remplacées.

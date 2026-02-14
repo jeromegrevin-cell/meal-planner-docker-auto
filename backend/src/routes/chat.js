@@ -719,7 +719,7 @@ function detectTitleForSlot(message) {
 
   let title = "";
   const pourRe =
-    /\bpour\s+(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|déjeuner|midi|diner|dîner|soir)\b/i;
+    /\bpour\s+(?:le|la|du|au|aux|des)?\s*(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|déjeuner|midi|diner|dîner|soir)\b/i;
   const pourMatch = raw.match(pourRe);
   if (pourMatch?.index != null && pourMatch.index > 0) {
     title = raw.slice(0, pourMatch.index).trim();
@@ -796,8 +796,8 @@ function detectRecipeForSlot(message) {
   if (!SLOT_LABELS[slot]) return null;
 
   const patterns = [
-    /recette\s+d['e]\s*([^,.!?]+?)(?:\s+pour\s+(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(?:dejeuner|déjeuner|midi|diner|dîner|soir)|$)/i,
-    /pour\s+(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(?:dejeuner|déjeuner|midi|diner|dîner|soir)[^a-zA-Z0-9]+(?:une\s+)?recette\s+d['e]\s*([^,.!?]+)$/i
+    /recette\s+d['e]\s*([^,.!?]+?)(?:\s+pour\s+(?:le|la|du|au|aux|des)?\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(?:dejeuner|déjeuner|midi|diner|dîner|soir)|$)/i,
+    /pour\s+(?:le|la|du|au|aux|des)?\s*(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(?:dejeuner|déjeuner|midi|diner|dîner|soir)[^a-zA-Z0-9]+(?:une\s+)?recette\s+d['e]\s*([^,.!?]+)$/i
   ];
 
   let title = "";
@@ -821,7 +821,7 @@ function detectRecipeForSlot(message) {
       title = raw.slice(idx + offset).trim();
       title = title.replace(/^[:,-]\s*/g, "");
       const tailRe =
-        /\b(pour|du)\s+(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|déjeuner|midi|diner|dîner|soir)\b/i;
+        /\b(pour|du)\s+(?:le|la|du|au|aux|des)?\s*(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|déjeuner|midi|diner|dîner|soir)\b/i;
       const tailMatch = title.match(tailRe);
       if (tailMatch) {
         title = title.slice(0, tailMatch.index).trim();
@@ -1667,6 +1667,7 @@ router.post("/proposals/generate", async (req, res) => {
     };
 
     const recipeCache = new Map();
+    const currentWeekTitles = [];
     const weekSlots = weekData?.slots || {};
     for (const [slot, slotData] of Object.entries(weekSlots)) {
       const free = String(slotData?.free_text || "").trim();
@@ -1678,6 +1679,7 @@ router.post("/proposals/generate", async (req, res) => {
         }
       }
       if (!title) continue;
+      currentWeekTitles.push(title);
       const k = mainIngredientKeyFromTitle(title);
       if (k) markIngredientUsed(k, slot);
     }
@@ -1715,18 +1717,52 @@ router.post("/proposals/generate", async (req, res) => {
 
     const usedTitlesForUniq = new Set(
       Object.entries(nextData.menu_proposals || {})
-        .filter(([slot]) => (overwrite ? !slotsSet.has(slot) : true))
         .flatMap(([, list]) => list || [])
         .map((p) => String(p?.title || "").trim().toLowerCase())
         .filter(Boolean)
     );
     const usedKeysForUniq = new Set(
       Object.entries(nextData.menu_proposals || {})
-        .filter(([slot]) => (overwrite ? !slotsSet.has(slot) : true))
         .flatMap(([, list]) => list || [])
         .map((p) => titleKey(String(p?.title || "").trim()))
         .filter(Boolean)
     );
+
+    for (const t of currentWeekTitles) {
+      const key = String(t || "").trim();
+      if (!key) continue;
+      usedTitlesForUniq.add(key.toLowerCase());
+      const tKey = titleKey(key);
+      if (tKey) usedKeysForUniq.add(tKey);
+    }
+
+    const avoidTitlesForPrompt = [];
+    const seenAvoid = new Set();
+    for (const t of currentWeekTitles) {
+      const norm = String(t || "").trim();
+      if (!norm) continue;
+      const low = norm.toLowerCase();
+      if (seenAvoid.has(low)) continue;
+      seenAvoid.add(low);
+      avoidTitlesForPrompt.push(norm);
+    }
+    for (const listRaw of Object.values(nextData.menu_proposals || {})) {
+      const list = Array.isArray(listRaw) ? listRaw : [];
+      for (const p of list) {
+        const t = String(p?.title || "").trim();
+        if (!t) continue;
+        const low = t.toLowerCase();
+        if (seenAvoid.has(low)) continue;
+        seenAvoid.add(low);
+        avoidTitlesForPrompt.push(t);
+      }
+    }
+    const avoidTitleLine =
+      avoidTitlesForPrompt.length > 0
+        ? `Titres déjà proposés cette semaine (à éviter si possible): ${avoidTitlesForPrompt
+            .slice(0, 8)
+            .join(" | ")}`
+        : null;
 
     const driveTitles = await listDriveIndexTitles();
     const driveCandidates = shuffle(
@@ -1812,6 +1848,7 @@ router.post("/proposals/generate", async (req, res) => {
               "Donne un menu au format strict suivant (une ligne par slot):",
               ...remainingSlots.map((s) => `- ${s}: <titre>`),
               ...avoidLines,
+              ...(avoidTitleLine ? [avoidTitleLine] : []),
               ...(avoidGlobalLine ? [avoidGlobalLine] : []),
               ...(avoidIngredientLine ? [avoidIngredientLine] : []),
               "Aucun texte en plus."
