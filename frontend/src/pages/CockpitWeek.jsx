@@ -480,6 +480,7 @@ export default function CockpitWeek() {
         role: "assistant",
         text: j.summary || "Proposition prête.",
         action: j.action || null,
+        rejectAction: j.reject_action || null,
         status: j.action ? "pending" : "info"
       };
       setChatMessages((prev) => [...prev, assistantMsg]);
@@ -523,12 +524,44 @@ export default function CockpitWeek() {
     }
   }
 
-  function rejectChatAction(messageId) {
-    setChatMessages((prev) =>
-      prev.map((m) =>
-        m.id === messageId ? { ...m, status: "rejected", text: `${m.text} ❌` } : m
-      )
-    );
+  async function rejectChatAction(messageId) {
+    const msg = chatMessages.find((m) => m.id === messageId);
+    const rejectAction = msg?.rejectAction || null;
+    if (!week?.week_id || !rejectAction) {
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, status: "rejected", text: `${m.text} ❌` } : m
+        )
+      );
+      return;
+    }
+
+    try {
+      const j = await fetchJson("/api/chat/commands/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week_id: week.week_id, action: rejectAction })
+      });
+      if (j?.week) {
+        setWeek(j.week);
+      }
+      if (j?.menu_proposals) {
+        setMenuProposals((prev) => ({ ...prev, ...j.menu_proposals }));
+      }
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, status: "applied", text: `${m.text} ❌` } : m
+        )
+      );
+    } catch (e) {
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, status: "error", text: `${m.text} (Erreur: ${e.message})` }
+            : m
+        )
+      );
+    }
   }
 
   function clearChat() {

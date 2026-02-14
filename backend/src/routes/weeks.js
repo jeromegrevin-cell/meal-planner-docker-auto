@@ -577,6 +577,8 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
     const validatedRaw = req.body?.validated;
     const previewRaw = req.body?.preview;
     const previewSigRaw = req.body?.preview_people_signature;
+    const generatedRecipeRaw = req.body?.generated_recipe;
+    const generatedRecipeSigRaw = req.body?.generated_recipe_people_signature;
     const sourceTypeRaw = req.body?.source_type;
 
     // recipe_id: string | null | undefined
@@ -643,6 +645,22 @@ router.patch("/:week_id/slots/:slot", async (req, res) => {
         delete week.slots[slot].preview_people_signature;
       } else {
         week.slots[slot].preview_people_signature = String(previewSigRaw);
+      }
+    }
+
+    if (generatedRecipeRaw !== undefined) {
+      if (generatedRecipeRaw === null) {
+        delete week.slots[slot].generated_recipe;
+      } else {
+        week.slots[slot].generated_recipe = generatedRecipeRaw;
+      }
+    }
+
+    if (generatedRecipeSigRaw !== undefined) {
+      if (generatedRecipeSigRaw === null) {
+        delete week.slots[slot].generated_recipe_people_signature;
+      } else {
+        week.slots[slot].generated_recipe_people_signature = String(generatedRecipeSigRaw);
       }
     }
 
