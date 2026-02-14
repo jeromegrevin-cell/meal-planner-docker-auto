@@ -683,6 +683,23 @@ function detectReplaceProposal(message) {
       break;
     }
   }
+  if (idx === -1) {
+    const wantPhrases = [
+      "je veux que ce soit",
+      "je veux",
+      "je voudrais",
+      "je souhaite",
+      "j'aimerais",
+      "je prends"
+    ];
+    for (const p of wantPhrases) {
+      const i = lower.indexOf(p);
+      if (i !== -1) {
+        idx = i + p.length;
+        break;
+      }
+    }
+  }
   if (idx !== -1) {
     title = raw.slice(idx).trim();
   }
@@ -1793,37 +1810,29 @@ router.post("/commands/parse", async (req, res) => {
       return res.json({ ok: true, action: null, summary });
     }
 
-  const replaceAction = detectReplaceProposal(message);
-  if (replaceAction) {
-    const noLunchSlots = new Set(
-      weekData?.rules_readonly?.no_lunch_slots || ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"]
-    );
-    const isProposalSlot = !noLunchSlots.has(replaceAction.slot);
-    if (isProposalSlot) {
-      const label = SLOT_LABELS[replaceAction.slot] || replaceAction.slot;
+    const replaceAction = detectReplaceProposal(message);
+    if (replaceAction) {
+      const noLunchSlots = new Set(
+        weekData?.rules_readonly?.no_lunch_slots || ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"]
+      );
+      const isProposalSlot = !noLunchSlots.has(replaceAction.slot);
+      if (isProposalSlot) {
+        const label = SLOT_LABELS[replaceAction.slot] || replaceAction.slot;
+        return res.json({
+          ok: true,
+          action: {
+            action_type: "force_menu_confirm",
+            slot: replaceAction.slot,
+            title: replaceAction.title,
+            source: replaceAction.source || "CHAT_USER"
+          },
+          summary: `Confirme: tu veux "${replaceAction.title}" (${label}) ? (Valider = oui, Refuser = non)`
+        });
+      }
       return res.json({
         ok: true,
-        action: {
-          action_type: "force_menu",
-          slot: replaceAction.slot,
-          title: replaceAction.title,
-          generate_recipe: true,
-          source: replaceAction.source || "CHAT_USER"
-        },
-        reject_action: {
-          action_type: "force_menu",
-          slot: replaceAction.slot,
-          title: replaceAction.title,
-          generate_recipe: false,
-          source: replaceAction.source || "CHAT_USER"
-        },
-        summary: `Tu veux la recette pour "${replaceAction.title}" (${label}) ? (Valider = oui, Refuser = non)`
-      });
-    }
-    return res.json({
-      ok: true,
-      action: { action_type: "replace_proposal", ...replaceAction },
-      summary: `Remplacer ${SLOT_LABELS[replaceAction.slot]} par "${replaceAction.title}"`
+        action: { action_type: "replace_proposal", ...replaceAction },
+        summary: `Remplacer ${SLOT_LABELS[replaceAction.slot]} par "${replaceAction.title}"`
       });
     }
 
@@ -1854,7 +1863,8 @@ router.post("/commands/parse", async (req, res) => {
       "Ta tâche: proposer UNE action structurée à valider.",
       "Actions possibles:",
       "- replace_proposal: remplace une proposition pour un slot (sans générer de fiche).",
-      "- force_menu: force un menu sur un slot, avec option de génération de recette.",
+      "- force_menu_confirm: force un menu sur un slot (demande de confirmation).",
+      "- force_menu_recipe: ajoute ou non une recette pour un menu forcé.",
       "- move_slot: déplace le repas d’un slot vers un autre.",
       "- cancel_slot: annule un repas (vide le slot et supprime les propositions).",
       "- add_constraint_week: ajoute une contrainte pour la semaine.",
@@ -1872,13 +1882,13 @@ router.post("/commands/parse", async (req, res) => {
       "Slots disponibles:",
       slotLines,
       "Réponds STRICTEMENT en JSON avec ces clés:",
-      '{"action_type":"replace_proposal|force_menu|cancel_slot|move_slot|add_constraint_week|add_constraint_global|remove_constraint_week|remove_constraint_global|chat_recipe|chat_reply","slot":"mon_dinner","title":"...", "from_slot":"mon_dinner", "to_slot":"tue_dinner", "constraint":"...", "message":"...", "recipe_title":"...", "generate_recipe":true}',
+      '{"action_type":"replace_proposal|force_menu_confirm|force_menu_recipe|cancel_slot|move_slot|add_constraint_week|add_constraint_global|remove_constraint_week|remove_constraint_global|chat_recipe|chat_reply","slot":"mon_dinner","title":"...", "from_slot":"mon_dinner", "to_slot":"tue_dinner", "constraint":"...", "message":"...", "recipe_title":"...", "generate_recipe":true}',
       "Règles:",
       "- slot requis seulement pour replace_proposal et cancel_slot.",
       "- from_slot et to_slot requis pour move_slot.",
       "- title requis seulement pour replace_proposal.",
-      "- title requis pour force_menu.",
-      "- generate_recipe requis pour force_menu.",
+      "- title requis pour force_menu_confirm et force_menu_recipe.",
+      "- generate_recipe requis pour force_menu_recipe.",
       "- constraint requis pour add/remove constraint.",
       "- message requis pour chat_reply.",
       "- recipe_title requis pour chat_recipe.",
@@ -1918,6 +1928,58 @@ router.post("/commands/parse", async (req, res) => {
       summary = `Remplacer ${SLOT_LABELS[slot] || slot} par "${title}"`;
       return res.json({ ok: true, action, summary });
     }
+    if (actionType === "force_menu_confirm") {
+      const slot = action?.slot;
+      const title = String(action?.title || "").trim();
+      if (!slot || !title) {
+        return res.json({
+          ok: true,
+          action: null,
+          summary: "Quel repas et quel titre veux-tu forcer ?"
+        });
+      }
+      const label = SLOT_LABELS[slot] || slot;
+      return res.json({
+        ok: true,
+        action: {
+          action_type: "force_menu_confirm",
+          slot,
+          title,
+          source: action?.source || "CHAT_USER"
+        },
+        summary: `Confirme: tu veux "${title}" (${label}) ? (Valider = oui, Refuser = non)`
+      });
+    }
+    if (actionType === "force_menu_recipe") {
+      const slot = action?.slot;
+      const title = String(action?.title || "").trim();
+      if (!slot || !title) {
+        return res.json({
+          ok: true,
+          action: null,
+          summary: "Quel repas et quel titre veux-tu forcer ?"
+        });
+      }
+      const label = SLOT_LABELS[slot] || slot;
+      return res.json({
+        ok: true,
+        action: {
+          action_type: "force_menu_recipe",
+          slot,
+          title,
+          generate_recipe: true,
+          source: action?.source || "CHAT_USER"
+        },
+        reject_action: {
+          action_type: "force_menu_recipe",
+          slot,
+          title,
+          generate_recipe: false,
+          source: action?.source || "CHAT_USER"
+        },
+        summary: `Tu veux la recette pour "${title}" (${label}) ? (Valider = oui, Refuser = non)`
+      });
+    }
     if (actionType === "force_menu") {
       const slot = action?.slot;
       const title = String(action?.title || "").trim();
@@ -1932,14 +1994,14 @@ router.post("/commands/parse", async (req, res) => {
       return res.json({
         ok: true,
         action: {
-          action_type: "force_menu",
+          action_type: "force_menu_recipe",
           slot,
           title,
           generate_recipe: true,
           source: action?.source || "CHAT_USER"
         },
         reject_action: {
-          action_type: "force_menu",
+          action_type: "force_menu_recipe",
           slot,
           title,
           generate_recipe: false,
@@ -2068,7 +2130,73 @@ router.post("/commands/apply", async (req, res) => {
       });
     }
 
-    if (type === "force_menu") {
+    if (type === "force_menu_confirm") {
+      const slot = String(action.slot || "");
+      const title = String(action.title || "").trim();
+      if (!slot || !title) {
+        return res.status(400).json({ error: "missing_slot_or_title" });
+      }
+
+      const weekPath = path.join(DATA_DIR, "weeks", `${weekId}.json`);
+      const weekData = await readJson(weekPath).catch(() => null);
+      if (!weekData) return res.status(404).json({ error: "week_not_found" });
+
+      const noLunchSlots = new Set(
+        weekData?.rules_readonly?.no_lunch_slots || ["mon_lunch", "tue_lunch", "thu_lunch", "fri_lunch"]
+      );
+      if (noLunchSlots.has(slot)) {
+        return res.status(400).json({ error: "slot_not_allowed" });
+      }
+
+      weekData.slots = weekData.slots || {};
+      const slotData = weekData.slots[slot] || {};
+      weekData.slots[slot] = {
+        ...slotData,
+        recipe_id: null,
+        free_text: title,
+        validated: true,
+        source_type: action?.source ? String(action.source) : "CHAT_USER"
+      };
+      delete weekData.slots[slot].generated_recipe;
+      delete weekData.slots[slot].generated_recipe_people_signature;
+
+      weekData.updated_at = nowIso();
+      await writeJson(weekPath, weekData);
+
+      const { path: p, data } = await ensureChatFile(weekId);
+      if (!data.menu_proposals || typeof data.menu_proposals !== "object") {
+        data.menu_proposals = {};
+      }
+      data.menu_proposals[slot] = [];
+      data.updated_at = nowIso();
+      await safeWriteChat(p, data);
+
+      const label = SLOT_LABELS[slot] || slot;
+      return res.json({
+        ok: true,
+        action_applied: type,
+        slot,
+        week: weekData,
+        menu_proposals: { [slot]: [] },
+        followup_action: {
+          action_type: "force_menu_recipe",
+          slot,
+          title,
+          generate_recipe: true,
+          source: action?.source ? String(action.source) : "CHAT_USER"
+        },
+        followup_reject_action: {
+          action_type: "force_menu_recipe",
+          slot,
+          title,
+          generate_recipe: false,
+          source: action?.source ? String(action.source) : "CHAT_USER"
+        },
+        followup_summary: `Tu veux la recette pour "${title}" (${label}) ? (Valider = oui, Refuser = non)`
+      });
+    }
+
+    if (type === "force_menu_recipe" || type === "force_menu") {
       const slot = String(action.slot || "");
       const title = String(action.title || "").trim();
       const wantsRecipe = action?.generate_recipe === true;

@@ -508,11 +508,22 @@ export default function CockpitWeek() {
       if (j?.menu_proposals) {
         setMenuProposals((prev) => ({ ...prev, ...j.menu_proposals }));
       }
-      setChatMessages((prev) =>
-        prev.map((m) =>
+      setChatMessages((prev) => {
+        const next = prev.map((m) =>
           m.id === messageId ? { ...m, status: "applied", text: `${m.text} ✅` } : m
-        )
-      );
+        );
+        if (j?.followup_action) {
+          next.push({
+            id: `a_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+            role: "assistant",
+            text: j.followup_summary || "Tu veux la recette ?",
+            action: j.followup_action,
+            rejectAction: j.followup_reject_action || null,
+            status: "pending"
+          });
+        }
+        return next;
+      });
     } catch (e) {
       setChatMessages((prev) =>
         prev.map((m) =>
@@ -548,7 +559,9 @@ export default function CockpitWeek() {
       if (j?.menu_proposals) {
         setMenuProposals((prev) => ({ ...prev, ...j.menu_proposals }));
       }
-      const isForceMenu = rejectAction?.action_type === "force_menu";
+      const isForceMenu =
+        rejectAction?.action_type === "force_menu" ||
+        rejectAction?.action_type === "force_menu_recipe";
       setChatMessages((prev) =>
         prev.map((m) =>
           m.id === messageId
@@ -2337,10 +2350,20 @@ export default function CockpitWeek() {
                 {m.action && m.status === "pending" ? (
                   <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
                     <button onClick={() => applyChatAction(m.id, m.action)}>
-                      {m.action?.action_type === "force_menu" ? "Oui (recette)" : "Valider"}
+                      {m.action?.action_type === "force_menu_confirm"
+                        ? "Oui (menu)"
+                        : m.action?.action_type === "force_menu_recipe" ||
+                            m.action?.action_type === "force_menu"
+                          ? "Oui (recette)"
+                          : "Valider"}
                     </button>
                     <button onClick={() => rejectChatAction(m.id)}>
-                      {m.action?.action_type === "force_menu" ? "Non (sans recette)" : "Refuser"}
+                      {m.action?.action_type === "force_menu_confirm"
+                        ? "Non"
+                        : m.action?.action_type === "force_menu_recipe" ||
+                            m.action?.action_type === "force_menu"
+                          ? "Non (sans recette)"
+                          : "Refuser"}
                     </button>
                   </div>
                 ) : null}
