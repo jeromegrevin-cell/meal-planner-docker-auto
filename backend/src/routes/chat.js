@@ -1023,8 +1023,12 @@ function wantsMoreRecipes(message) {
 }
 
 function buildRecipeChoices(titles, usedTitles, query, offset, limit) {
+  const hasQuery = tokenizeForMatch(query).length > 0;
   let ranked = rankTitlesByQuery(titles, query, usedTitles);
   if (!ranked.length) ranked = rankTitlesByQuery(titles, "", usedTitles);
+  if (!hasQuery && ranked.length > 1) {
+    ranked = shuffle(ranked);
+  }
   if (!ranked.length) return { choices: [], offset: 0, total: 0 };
   const total = ranked.length;
   const start = Math.min(offset || 0, Math.max(total - 1, 0));
@@ -2418,7 +2422,7 @@ router.post("/commands/parse", async (req, res) => {
         const driveTitles = await listDriveIndexTitles();
         const usedTitles = await collectUsedTitlesForWeek(weekData, chatData.menu_proposals || {});
         const offset = wantsMore ? pending.offset || 0 : 0;
-        const { choices: nextChoices, offset: nextOffset } = buildRecipeChoices(
+        const { choices: nextChoices, offset: nextOffset, total } = buildRecipeChoices(
           driveTitles,
           usedTitles,
           query,
@@ -2465,6 +2469,13 @@ router.post("/commands/parse", async (req, res) => {
           query: query || "",
           offset: nextOffset,
           created_at: nowIso()
+        };
+        chatData.last_recipe_suggestions = {
+          slot: slot || null,
+          query: query || "",
+          offset: nextOffset,
+          total,
+          updated_at: nowIso()
         };
         chatData.updated_at = nowIso();
         await safeWriteChat(chatPathFile, chatData);
@@ -2592,11 +2603,16 @@ router.post("/commands/parse", async (req, res) => {
       const query = recipeSuggestion.query;
       const driveTitles = await listDriveIndexTitles();
       const usedTitles = await collectUsedTitlesForWeek(weekData, chatData.menu_proposals || {});
-      const { choices, offset } = buildRecipeChoices(
+      const prev = chatData.last_recipe_suggestions || null;
+      const prevOffset =
+        prev && prev.slot === (slot || null) && prev.query === (query || "")
+          ? prev.offset || 0
+          : 0;
+      const { choices, offset, total } = buildRecipeChoices(
         driveTitles,
         usedTitles,
         query,
-        0,
+        prevOffset,
         5
       );
       if (!choices.length) {
@@ -2635,10 +2651,17 @@ router.post("/commands/parse", async (req, res) => {
         slot: slot || null,
         query: query || "",
         offset,
-          created_at: nowIso()
-        };
-        chatData.updated_at = nowIso();
-        await safeWriteChat(chatPathFile, chatData);
+        created_at: nowIso()
+      };
+      chatData.last_recipe_suggestions = {
+        slot: slot || null,
+        query: query || "",
+        offset,
+        total,
+        updated_at: nowIso()
+      };
+      chatData.updated_at = nowIso();
+      await safeWriteChat(chatPathFile, chatData);
         const list = choices.map((c, i) => `${i + 1}. ${c}`).join("\n");
       return res.json({
         ok: true,

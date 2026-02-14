@@ -1851,6 +1851,11 @@ export default function CockpitWeek() {
   const isMenuMode = keepMode === "menus";
   const menuLineCount = isMenuMode && keepText ? keepText.split("\n").length : 0;
   const menuRows = isMenuMode ? Math.min(36, Math.max(6, menuLineCount)) : undefined;
+  const menuMaxLen =
+    isMenuMode && keepText
+      ? keepText.split("\n").reduce((maxLen, line) => Math.max(maxLen, line.length), 0)
+      : 0;
+  const menuCols = isMenuMode ? Math.min(140, Math.max(40, menuMaxLen + 2)) : undefined;
 
   return (
     <div className="page week-layout" style={{ display: "flex", gap: 16 }}>
@@ -2621,9 +2626,10 @@ export default function CockpitWeek() {
             onClick={(e) => e.stopPropagation()}
             className="modal"
             style={{
-              width: "min(1100px, 96vw)",
+              width: isMenuMode ? "fit-content" : "min(1100px, 96vw)",
               height: isMenuMode ? "auto" : "80vh",
               maxHeight: "80vh",
+              maxWidth: "96vw",
               padding: 16,
               display: "flex",
               flexDirection: "column"
@@ -2696,8 +2702,10 @@ export default function CockpitWeek() {
                     readOnly
                     value={keepText}
                     rows={menuRows}
+                    cols={menuCols}
+                    wrap={isMenuMode ? "off" : "soft"}
                     style={{
-                      width: "100%",
+                      width: isMenuMode ? "auto" : "100%",
                       fontFamily: "monospace",
                       fontSize: 12,
                       flex: isMenuMode ? "none" : 1,
