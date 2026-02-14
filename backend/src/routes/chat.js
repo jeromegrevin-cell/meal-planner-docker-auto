@@ -630,6 +630,70 @@ function detectWeekBanConstraint(message) {
   return { constraint: `Interdit: ${item}` };
 }
 
+function detectRecipeForSlot(message) {
+  const raw = String(message || "").trim();
+  if (!raw) return null;
+  const msg = normalizePlain(raw);
+  if (!msg || !msg.includes("recette")) return null;
+
+  const dayMap = {
+    lundi: "mon",
+    mardi: "tue",
+    mercredi: "wed",
+    jeudi: "thu",
+    vendredi: "fri",
+    samedi: "sat",
+    dimanche: "sun"
+  };
+  const slotRe =
+    /(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|midi|diner|soir)/i;
+  const slotMatch = msg.match(slotRe);
+  if (!slotMatch) return null;
+  const day = dayMap[slotMatch[1]];
+  const meal = slotMatch[2];
+  const isLunch = meal === "dejeuner" || meal === "midi";
+  const slot = `${day}_${isLunch ? "lunch" : "dinner"}`;
+  if (!SLOT_LABELS[slot]) return null;
+
+  const patterns = [
+    /recette\s+d['e]\s*([^,.!?]+?)(?:\s+pour\s+(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(?:dejeuner|déjeuner|midi|diner|dîner|soir)|$)/i,
+    /pour\s+(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(?:dejeuner|déjeuner|midi|diner|dîner|soir)[^a-zA-Z0-9]+(?:une\s+)?recette\s+d['e]\s*([^,.!?]+)$/i
+  ];
+
+  let title = "";
+  for (const re of patterns) {
+    const m = raw.match(re);
+    if (m && m[1]) {
+      title = String(m[1]).trim();
+      break;
+    }
+  }
+
+  if (!title) {
+    const lower = raw.toLowerCase();
+    let idx = lower.indexOf("recette de");
+    let offset = "recette de".length;
+    if (idx === -1) {
+      idx = lower.indexOf("recette d'");
+      offset = "recette d'".length;
+    }
+    if (idx !== -1) {
+      title = raw.slice(idx + offset).trim();
+      title = title.replace(/^[:,-]\s*/g, "");
+      const tailRe =
+        /\b(pour|du)\s+(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(dejeuner|déjeuner|midi|diner|dîner|soir)\b/i;
+      const tailMatch = title.match(tailRe);
+      if (tailMatch) {
+        title = title.slice(0, tailMatch.index).trim();
+      }
+    }
+  }
+
+  title = title.replace(/^["'«»]+|["'«»]+$/g, "").trim();
+
+  return { slot, title };
+}
+
 function extractSansItem(text) {
   const raw = String(text || "").trim();
   if (!raw) return "";
@@ -1873,6 +1937,29 @@ router.post("/commands/parse", async (req, res) => {
       });
     }
 
+    const recipeForSlot = detectRecipeForSlot(message);
+    if (recipeForSlot) {
+      const { slot, title } = recipeForSlot;
+      if (!title) {
+        return res.json({
+          ok: true,
+          action: null,
+          summary: `Quel titre de recette veux-tu pour ${SLOT_LABELS[slot] || slot} ?`
+        });
+      }
+      const label = SLOT_LABELS[slot] || slot;
+      return res.json({
+        ok: true,
+        action: {
+          action_type: "force_menu_confirm",
+          slot,
+          title,
+          source: "CHAT_USER"
+        },
+        summary: `Confirme: tu veux "${title}" (${label}) ? (Valider = oui, Refuser = non)`
+      });
+    }
+
     const openai = getOpenAIClient();
     if (!openai) return res.status(500).json({ error: "openai_not_configured" });
 
@@ -1897,6 +1984,7 @@ router.post("/commands/parse", async (req, res) => {
       'Utilisateur: "annule mercredi dîner" -> {"action_type":"cancel_slot","slot":"wed_dinner"}',
       'Utilisateur: "pas de repas vendredi soir" -> {"action_type":"cancel_slot","slot":"fri_dinner"}',
       'Utilisateur: "mets le repas du samedi déjeuner au jeudi dîner" -> {"action_type":"move_slot","from_slot":"sat_lunch","to_slot":"thu_dinner"}',
+      'Utilisateur: "donne moi une recette de soupe pour dimanche soir" -> {"action_type":"force_menu_confirm","slot":"sun_dinner","title":"soupe"}',
       'Utilisateur: "pas d’omelette cette semaine" -> {"action_type":"add_constraint_week","constraint":"Interdit: omelette"}',
       "Slots disponibles:",
       slotLines,
@@ -1907,6 +1995,7 @@ router.post("/commands/parse", async (req, res) => {
       "- from_slot et to_slot requis pour move_slot.",
       "- title requis seulement pour replace_proposal.",
       "- title requis pour force_menu_confirm et force_menu_recipe.",
+      "- si un slot/repas est mentionné, ne pas utiliser chat_recipe: utiliser force_menu_confirm.",
       "- generate_recipe requis pour force_menu_recipe.",
       "- constraint requis pour add/remove constraint.",
       "- message requis pour chat_reply.",
