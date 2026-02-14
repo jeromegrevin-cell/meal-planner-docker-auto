@@ -2253,6 +2253,7 @@ export default function CockpitWeek() {
                       )}
                       {showProposals &&
                         proposals.map((p, idx) => {
+                          const canDragProposal = !isValidated && proposals.length > 0;
                           return (
                             <div
                               key={p.proposal_id}
@@ -2268,9 +2269,30 @@ export default function CockpitWeek() {
                                 lineHeight: "18px"
                               }}
                               onClick={(e) => e.stopPropagation()}
+                              draggable={canDragProposal}
+                              onDragStart={(e) => {
+                                if (!canDragProposal) return;
+                                dragFromSlotRef.current = slot;
+                                try {
+                                  e.dataTransfer.setData("text/plain", slot);
+                                  e.dataTransfer.effectAllowed = "move";
+                                } catch (_e) {}
+                              }}
+                              onDragEnd={() => {
+                                dragFromSlotRef.current = null;
+                                setDragOverSlot(null);
+                              }}
+                              title={
+                                canDragProposal
+                                  ? "Glisser pour déplacer cette proposition"
+                                  : undefined
+                              }
                             >
                               <span style={{ flex: 1 }}>
                                 <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
+                                  {canDragProposal ? (
+                                    <span style={{ cursor: "grab", userSelect: "none" }}>⠿</span>
+                                  ) : null}
                                   {p?.source === "DRIVE" || p?.source === "DRIVE_INDEX" ? (
                                     <DriveIcon size={14} />
                                   ) : null}
