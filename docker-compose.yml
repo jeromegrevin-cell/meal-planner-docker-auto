@@ -9,6 +9,7 @@ services:
       - PORT=3002
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=gpt-5.2
+      - OPENAI_MODEL_CHEAP=${OPENAI_MODEL_CHEAP:-gpt-4o-mini}
       - MEAL_PLANNER_SECRETS_DIR=/run/meal-planner-secrets
       - MEAL_PLANNER_PROJECT_ROOT=/workspace
       - PYTHON_BIN=/opt/venv/bin/python

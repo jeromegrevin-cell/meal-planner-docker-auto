@@ -52,6 +52,10 @@ function getModel() {
   return process.env.OPENAI_MODEL || "gpt-5.2";
 }
 
+function getCheapModel() {
+  return process.env.OPENAI_MODEL_CHEAP || process.env.OPENAI_MODEL || "gpt-5.2";
+}
+
 async function ensureDir(dirPath) {
   await fs.mkdir(dirPath, { recursive: true });
 }
@@ -148,7 +152,7 @@ async function buildPreviewFromTitle(title, people) {
     throw err;
   }
 
-  const model = getModel();
+  const model = getCheapModel();
   const peopleLine = people
     ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
     : "";

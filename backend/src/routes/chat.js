@@ -62,6 +62,10 @@ function getModel() {
   return process.env.OPENAI_MODEL || "gpt-5.2";
 }
 
+function getCheapModel() {
+  return process.env.OPENAI_MODEL_CHEAP || process.env.OPENAI_MODEL || "gpt-5.2";
+}
+
 // ---------- Utils ----------
 let cachedStaticConstraints = null;
 let cachedStaticConstraintsMtime = 0;
@@ -132,6 +136,21 @@ function buildStaticConstraintsPromptLines() {
     if (text) lines.push(`- ${text}`);
   }
   return lines;
+}
+
+function buildStaticConstraintsPromptSummaryLines() {
+  const summary = [
+    "Repas: pas de déjeuner lun/mar/jeu/ven; autres repas remplis ou reste/congélateur.",
+    "Portions: 3 pers (2A+1E 9 ans), quantités adaptées, préciser différences si besoin.",
+    "Nutrition: ~500 kcal/adulte/repas, enfant proche, pas de menus déséquilibrés.",
+    "Saison: légumes de saison, courgette hors saison interdite; équivalences cru/cuit: pâtes x2,5; riz x3; semoule x2; légumineuses x3; PDT x1; patate douce x1.",
+    "Répétition: ingrédient principal max 2x/sem, si 2x alors ≥2 jours d’écart.",
+    "Sources: mix recettes générées + Drive; demander index Drive à jour sinon rescan.",
+    "Courses: liste obligatoire après validation, tableau ingrédient/qté/recettes, cohérence stricte.",
+    "Budget: cible ≤60€ (Lidl+Carrefour).",
+    "Qualité: double vérif verticale/horizontale; zéro ingrédient fantôme; corriger immédiatement."
+  ];
+  return ["Contraintes Accueil (résumé):", ...summary.map((line) => `- ${line}`)];
 }
 
 function buildStaticConstraintsReplyLines() {
@@ -839,7 +858,7 @@ async function buildPreviewFromTitle(title, people) {
     throw err;
   }
 
-  const model = getModel();
+  const model = getCheapModel();
   const peopleLine = people
     ? `Personnes: ${people.adults || 0} adulte(s), ${people.children || 0} enfant(s) (${(people.child_birth_months || []).join(", ") || "n/a"}).`
     : "";
@@ -1857,7 +1876,7 @@ router.post("/commands/parse", async (req, res) => {
     const openai = getOpenAIClient();
     if (!openai) return res.status(500).json({ error: "openai_not_configured" });
 
-    const model = getModel();
+    const model = getCheapModel();
     const prompt = [
       "Tu reçois une demande utilisateur en langage courant.",
       "Ta tâche: proposer UNE action structurée à valider.",
@@ -1892,7 +1911,7 @@ router.post("/commands/parse", async (req, res) => {
       "- constraint requis pour add/remove constraint.",
       "- message requis pour chat_reply.",
       "- recipe_title requis pour chat_recipe.",
-      ...buildStaticConstraintsPromptLines(),
+      ...buildStaticConstraintsPromptSummaryLines(),
       `Demande utilisateur: "${message}"`
     ].join("\n");
 
