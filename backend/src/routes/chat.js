@@ -300,6 +300,17 @@ function normalizePlain(text) {
     .trim();
 }
 
+function isLeftoverTitle(title) {
+  const t = normalizePlain(title);
+  if (!t) return false;
+  return (
+    /\brestes?\b/.test(t) ||
+    /\bcongelateur\b/.test(t) ||
+    /\bcongele\b/.test(t) ||
+    /\bcongel\b/.test(t)
+  );
+}
+
 const MAIN_INGREDIENT_PATTERNS = [
   {
     key: "pommes_de_terre",
@@ -672,8 +683,13 @@ function stripTitlePrefixes(title) {
   const prefixes = [
     /^donne\s+moi\s+/i,
     /^donne-moi\s+/i,
+    /^donne\s+moi\s+un[e]?\s+/i,
+    /^donne-moi\s+un[e]?\s+/i,
     /^propose\s+moi\s+/i,
     /^propose-moi\s+/i,
+    /^propose\s+moi\s+un[e]?\s+/i,
+    /^propose-moi\s+un[e]?\s+/i,
+    /^propose\s+un[e]?\s+/i,
     /^je\s+veux\s+/i,
     /^je\s+voudrais\s+/i,
     /^je\s+souhaite\s+/i,
@@ -728,6 +744,9 @@ function detectTitleForSlot(message) {
     if (after) {
       title = after.replace(/^[:\-\u2013\u2014>\s]+/, "").trim();
     }
+  }
+  if (!title && slotMatch?.index != null && slotMatch.index > 0) {
+    title = raw.slice(0, slotMatch.index).trim();
   }
 
   title = stripTitlePrefixes(title);
@@ -1158,6 +1177,7 @@ function parseProposalLines(
     const slot = normalizeSlotKey(m[1]);
     const title = normalizeTitle(m[2]);
     if (!slot || !title) continue;
+    if (isLeftoverTitle(title)) continue;
     if (!slotSet.has(slot)) continue;
     if (map.has(slot)) continue;
     const key = title.toLowerCase();
@@ -1770,6 +1790,7 @@ router.post("/proposals/generate", async (req, res) => {
         const key = t.toLowerCase();
         const tKey = titleKey(t);
         const iKey = mainIngredientKeyFromTitle(t);
+        if (isLeftoverTitle(t)) return false;
         if (iKey && !isIngredientAllowed(iKey, null)) return false;
         return key && !usedTitlesForUniq.has(key) && (!tKey || !usedKeysForUniq.has(tKey));
       })
@@ -1795,6 +1816,7 @@ router.post("/proposals/generate", async (req, res) => {
         if (!driveSlots.has(slot)) continue;
         if (driveCandidates.length === 0) break;
         const title = driveCandidates.shift();
+        if (isLeftoverTitle(title)) continue;
         const key = title.toLowerCase();
         const tKey = titleKey(title);
         const iKey = mainIngredientKeyFromTitle(title);
@@ -1908,6 +1930,7 @@ router.post("/proposals/generate", async (req, res) => {
       while (driveCandidates.length > 0) {
         const title = driveCandidates.shift();
         if (!title) continue;
+        if (isLeftoverTitle(title)) continue;
         const key = title.toLowerCase();
         const tKey = titleKey(title);
         if (usedTitlesForUniq.has(key)) continue;
@@ -2023,6 +2046,7 @@ router.post("/proposals/generate", async (req, res) => {
       while (driveCandidates.length > 0) {
         const title = driveCandidates.shift();
         if (!title) continue;
+        if (isLeftoverTitle(title)) continue;
         const key = title.toLowerCase();
         const tKey = titleKey(title);
         if (takenTitles.has(key)) continue;
@@ -2352,6 +2376,37 @@ router.post("/commands/parse", async (req, res) => {
       const choices = pending.choices;
       const msg = String(message || "").trim();
 
+      const explicitTitle =
+        detectTitleForSlot(message)?.title || detectRecipeForSlot(message)?.title;
+      const explicitSlot =
+        detectTitleForSlot(message)?.slot || detectRecipeForSlot(message)?.slot || null;
+      if (explicitTitle) {
+        delete chatData.pending_recipe_choices;
+        chatData.updated_at = nowIso();
+        await safeWriteChat(chatPathFile, chatData);
+        if (explicitSlot) {
+          const label = SLOT_LABELS[explicitSlot] || explicitSlot;
+          return res.json({
+            ok: true,
+            action: {
+              action_type: "force_menu_confirm",
+              slot: explicitSlot,
+              title: explicitTitle,
+              source: "CHAT_USER"
+            },
+            summary: `Confirme: tu veux "${explicitTitle}" (${label}) ? (Valider = oui, Refuser = non)`
+          });
+        }
+        chatData.pending_recipe_target = { title: explicitTitle, created_at: nowIso() };
+        chatData.updated_at = nowIso();
+        await safeWriteChat(chatPathFile, chatData);
+        return res.json({
+          ok: true,
+          action: null,
+          summary: `Tu choisis "${explicitTitle}". Pour quel repas veux-tu l'utiliser ?`
+        });
+      }
+
       const suggestionRequest = detectRecipeSuggestionRequest(message);
       const wantsMore = wantsMoreRecipes(message);
       if (suggestionRequest || wantsMore) {
@@ -2375,6 +2430,33 @@ router.post("/commands/parse", async (req, res) => {
             ok: true,
             action: null,
             summary: "Je n'ai pas trouvé d'autres idées. Tu veux quel type de recette ?"
+          });
+        }
+        if (nextChoices.length === 1) {
+          const chosenTitle = nextChoices[0];
+          delete chatData.pending_recipe_choices;
+          if (slot) {
+            chatData.updated_at = nowIso();
+            await safeWriteChat(chatPathFile, chatData);
+            const label = SLOT_LABELS[slot] || slot;
+            return res.json({
+              ok: true,
+              action: {
+                action_type: "force_menu_confirm",
+                slot,
+                title: chosenTitle,
+                source: "CHAT_USER"
+              },
+              summary: `Confirme: tu veux "${chosenTitle}" (${label}) ? (Valider = oui, Refuser = non)`
+            });
+          }
+          chatData.pending_recipe_target = { title: chosenTitle, created_at: nowIso() };
+          chatData.updated_at = nowIso();
+          await safeWriteChat(chatPathFile, chatData);
+          return res.json({
+            ok: true,
+            action: null,
+            summary: `Je n'ai trouvé qu'une option: "${chosenTitle}". Pour quel repas veux-tu l'utiliser ?`
           });
         }
         chatData.pending_recipe_choices = {
@@ -2505,30 +2587,54 @@ router.post("/commands/parse", async (req, res) => {
     }
 
       const recipeSuggestion = detectRecipeSuggestionRequest(message);
-      if (recipeSuggestion) {
-        const slot = recipeSuggestion.slot;
-        const query = recipeSuggestion.query;
-        const driveTitles = await listDriveIndexTitles();
-        const usedTitles = await collectUsedTitlesForWeek(weekData, chatData.menu_proposals || {});
-        const { choices, offset } = buildRecipeChoices(
-          driveTitles,
-          usedTitles,
-          query,
-          0,
-          5
-        );
-        if (!choices.length) {
+    if (recipeSuggestion) {
+      const slot = recipeSuggestion.slot;
+      const query = recipeSuggestion.query;
+      const driveTitles = await listDriveIndexTitles();
+      const usedTitles = await collectUsedTitlesForWeek(weekData, chatData.menu_proposals || {});
+      const { choices, offset } = buildRecipeChoices(
+        driveTitles,
+        usedTitles,
+        query,
+        0,
+        5
+      );
+      if (!choices.length) {
+        return res.json({
+          ok: true,
+          action: null,
+          summary: "Je n'ai pas trouvé d'idées. Tu veux quel type de recette ?"
+        });
+      }
+      if (choices.length === 1) {
+        const chosenTitle = choices[0];
+        if (slot) {
+          const label = SLOT_LABELS[slot] || slot;
           return res.json({
             ok: true,
-            action: null,
-            summary: "Je n'ai pas trouvé d'idées. Tu veux quel type de recette ?"
+            action: {
+              action_type: "force_menu_confirm",
+              slot,
+              title: chosenTitle,
+              source: "CHAT_USER"
+            },
+            summary: `Confirme: tu veux "${chosenTitle}" (${label}) ? (Valider = oui, Refuser = non)`
           });
         }
-        chatData.pending_recipe_choices = {
-          choices,
-          slot: slot || null,
-          query: query || "",
-          offset,
+        chatData.pending_recipe_target = { title: chosenTitle, created_at: nowIso() };
+        chatData.updated_at = nowIso();
+        await safeWriteChat(chatPathFile, chatData);
+        return res.json({
+          ok: true,
+          action: null,
+          summary: `Je n'ai trouvé qu'une option: "${chosenTitle}". Pour quel repas veux-tu l'utiliser ?`
+        });
+      }
+      chatData.pending_recipe_choices = {
+        choices,
+        slot: slot || null,
+        query: query || "",
+        offset,
           created_at: nowIso()
         };
         chatData.updated_at = nowIso();
