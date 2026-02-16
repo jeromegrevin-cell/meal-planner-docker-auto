@@ -5,6 +5,7 @@ import fsSync from "fs";
 import OpenAI from "openai";
 import { readJson, writeJson } from "../lib/jsonStore.js";
 import { DATA_DIR, PROJECT_ROOT } from "../lib/dataPaths.js";
+import { isValidWeekId } from "../lib/validators.js";
 
 const router = express.Router();
 
@@ -82,15 +83,6 @@ async function safeReadJson(filePath) {
 
     throw e;
   }
-}
-
-function isValidWeekId(weekId) {
-  // Format: YYYY-WNN (ex: 2026-W01)
-  if (typeof weekId !== "string") return false;
-  const m = weekId.match(/^(\d{4})-W(\d{2})$/);
-  if (!m) return false;
-  const weekNum = Number(m[2]);
-  return Number.isInteger(weekNum) && weekNum >= 1 && weekNum <= 99;
 }
 
 function isISODate(d) {
@@ -255,6 +247,11 @@ async function listWeekFiles() {
 }
 
 async function loadWeek(weekId) {
+  if (!isValidWeekId(weekId)) {
+    const err = new Error("invalid_week_id");
+    err.code = "EINVAL";
+    throw err;
+  }
   const p = path.join(WEEKS_DIR, `${weekId}.json`);
   const week = await safeReadJson(p);
   if (!week) {
@@ -770,7 +767,7 @@ router.get("/:week_id/constraints", async (req, res) => {
       }
     });
   } catch (e) {
-    const status = e?.code === "ENOENT" ? 404 : 500;
+    const status = e?.code === "ENOENT" ? 404 : e?.code === "EINVAL" ? 400 : 500;
     res.status(status).json({ error: "constraints_failed", details: e.message });
   }
 });
@@ -868,7 +865,7 @@ router.get("/:week_id/audit", async (req, res) => {
       slot_issues: slotIssues
     });
   } catch (e) {
-    const status = e?.code === "ENOENT" ? 404 : 500;
+    const status = e?.code === "ENOENT" ? 404 : e?.code === "EINVAL" ? 400 : 500;
     res.status(status).json({ error: "week_audit_failed", details: e.message });
   }
 });
@@ -997,7 +994,7 @@ router.get("/:week_id/shopping-list", async (req, res) => {
       week
     });
   } catch (e) {
-    const status = e?.code === "ENOENT" ? 404 : 500;
+    const status = e?.code === "ENOENT" ? 404 : e?.code === "EINVAL" ? 400 : 500;
     res.status(status).json({ error: "shopping_list_failed", details: e.message });
   }
 });
@@ -1023,7 +1020,7 @@ router.get("/:week_id", async (req, res) => {
     }
     res.json(week);
   } catch (e) {
-    const status = e?.code === "ENOENT" ? 404 : 500;
+    const status = e?.code === "ENOENT" ? 404 : e?.code === "EINVAL" ? 400 : 500;
     res.status(status).json({ error: "week_read_failed", details: e.message });
   }
 });

@@ -10,6 +10,7 @@
     "check:recipes": "node scripts/validate-recipes.js",
     "prestart": "node scripts/check-json.js",
     "start": "node src/index.js",
+    "test:security": "node --test test/security-validation.test.js",
     "predev": "node scripts/check-json.js",
     "dev": "nodemon --legacy-watch --ignore 'data/**' src/index.js"
   },

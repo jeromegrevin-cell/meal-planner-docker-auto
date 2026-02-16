@@ -9,6 +9,7 @@ import { readJson, writeJson } from "../lib/jsonStore.js";
 import { DATA_DIR, PROJECT_ROOT } from "../lib/dataPaths.js";
 import { validateRecipe } from "../lib/recipeValidation.js";
 import { updateLastUpload } from "../lib/driveState.js";
+import { resolveUploadPdfPath } from "../lib/validators.js";
 
 const router = express.Router();
 
@@ -220,11 +221,11 @@ async function uploadPdfToDrive({ title, pdfPath }) {
     env.MEAL_PLANNER_SECRETS_DIR = secretsDir;
   }
 
-  const command = `${pythonBin} -u "${scriptPath}" --pdf "${pdfPath}" --title "${title}"`;
   return new Promise((resolve, reject) => {
-    const child = spawn("bash", ["-lc", command], {
+    const child = spawn(pythonBin, ["-u", scriptPath, "--pdf", pdfPath, "--title", title], {
       cwd: ROOT_DIR,
-      env
+      env,
+      shell: false
     });
     let stdout = "";
     let stderr = "";
@@ -397,7 +398,12 @@ router.post("/upload", async (req, res) => {
       return res.status(409).json({ error: "duplicate_title", conflicts });
     }
 
-    const pdf_path = String(req.body?.pdf_path || path.join(PDFS_DIR, `${recipe_id}.pdf`));
+    let pdf_path;
+    try {
+      pdf_path = resolveUploadPdfPath(PDFS_DIR, recipe_id, req.body?.pdf_path);
+    } catch (e) {
+      return res.status(400).json({ error: "pdf_path_not_allowed" });
+    }
     if (!fsSync.existsSync(pdf_path)) {
       return res.status(404).json({ error: "pdf_not_found", pdf_path });
     }

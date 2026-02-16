@@ -5,6 +5,7 @@ import fsSync from "fs";
 import { DATA_DIR, PROJECT_ROOT } from "../lib/dataPaths.js";
 import OpenAI from "openai";
 import { readJson, writeJson } from "../lib/jsonStore.js";
+import { isValidWeekId } from "../lib/validators.js";
 
 const router = express.Router();
 
@@ -1353,6 +1354,11 @@ async function buildPreviewFromTitle(title, people) {
 }
 
 async function ensureChatFile(weekId) {
+  if (!isValidWeekId(weekId)) {
+    const err = new Error("invalid_week_id");
+    err.code = "EINVAL";
+    throw err;
+  }
   await ensureDir(CHAT_DIR);
 
   const p = chatPath(weekId);
@@ -1423,6 +1429,9 @@ function addUsage(session, model, usage) {
 router.get("/current", async (req, res) => {
   const weekId = String(req.query.week_id || "");
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!isValidWeekId(weekId)) {
+    return res.status(400).json({ error: "invalid_week_id" });
+  }
 
   try {
     const { data } = await ensureChatFile(weekId);
@@ -1441,6 +1450,9 @@ router.post("/current", async (req, res) => {
   const context = req.body?.context || null;
 
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!isValidWeekId(weekId)) {
+    return res.status(400).json({ error: "invalid_week_id" });
+  }
   if (!message.trim())
     return res.status(400).json({ error: "missing_message" });
 
@@ -1519,6 +1531,9 @@ router.post("/current", async (req, res) => {
 router.get("/proposals", async (req, res) => {
   const weekId = String(req.query.week_id || "");
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!isValidWeekId(weekId)) {
+    return res.status(400).json({ error: "invalid_week_id" });
+  }
 
   try {
     const { data } = await ensureChatFile(weekId);
@@ -1536,6 +1551,9 @@ router.post("/proposals/import", async (req, res) => {
   const proposals = req.body?.proposals || null;
 
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!isValidWeekId(weekId)) {
+    return res.status(400).json({ error: "invalid_week_id" });
+  }
   if (!proposals || typeof proposals !== "object") {
     return res.status(400).json({ error: "missing_proposals" });
   }
@@ -1594,6 +1612,9 @@ router.post("/proposals/generate", async (req, res) => {
     const overwrite = !!req.body?.overwrite;
 
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!isValidWeekId(weekId)) {
+    return res.status(400).json({ error: "invalid_week_id" });
+  }
   if (slots.length === 0) {
     return res.status(400).json({ error: "missing_slots" });
   }
@@ -2218,6 +2239,9 @@ router.post("/proposals/preview", async (req, res) => {
   const people = req.body?.people || null;
 
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!isValidWeekId(weekId)) {
+    return res.status(400).json({ error: "invalid_week_id" });
+  }
   if (!slot) return res.status(400).json({ error: "missing_slot" });
   if (!proposalId) return res.status(400).json({ error: "missing_proposal_id" });
   if (!title) return res.status(400).json({ error: "missing_title" });
@@ -2361,6 +2385,9 @@ router.post("/commands/parse", async (req, res) => {
   const weekId = String(req.body?.week_id || "");
   const message = String(req.body?.message || "").trim();
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!isValidWeekId(weekId)) {
+    return res.status(400).json({ error: "invalid_week_id" });
+  }
   if (!message) return res.status(400).json({ error: "missing_message" });
 
   try {
@@ -2965,6 +2992,9 @@ router.post("/commands/apply", async (req, res) => {
   const weekId = String(req.body?.week_id || "");
   const action = req.body?.action || null;
   if (!weekId) return res.status(400).json({ error: "missing_week_id" });
+  if (!isValidWeekId(weekId)) {
+    return res.status(400).json({ error: "invalid_week_id" });
+  }
   if (!action || typeof action !== "object") {
     return res.status(400).json({ error: "missing_action" });
   }
